@@ -3,6 +3,7 @@ import { CodeBlock } from './CodeBlock'
 import { CustomImage } from './CustomImage'
 import { Callout } from './Callout'
 import { YouTubeEmbed } from './YouTubeEmbed'
+import remarkGfm from 'remark-gfm'
 
 interface MDXContentProps {
   source: string
@@ -62,5 +63,5 @@ function slugify(text: React.ReactNode): string {
 }
 
 export function MDXContent({ source }: MDXContentProps) {
-  return <MDXRemote source={source} components={components} />
+  return <MDXRemote source={source} components={components} options={{mdxOptions: {remarkPlugins: [remarkGfm]}}} />
 }

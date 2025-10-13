@@ -1006,6 +1006,29 @@ a:hover {
   font-weight: bold;
 }
 
+/* Tables inside MDX post content */
+.post-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+}
+
+.post-content thead th {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 2px dotted var(--border-color);
+  color: var(--accent);
+}
+
+.post-content tbody td {
+  padding: 10px 12px;
+  border-top: 1px dotted var(--border-color);
+}
+
+.post-content tbody tr:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
 /* Responsive adjustments for about page */
 @media (max-width: 768px) {
   .about-section {
