@@ -16,6 +16,7 @@ A modern, retro terminal-inspired blog theme built with Next.js 15, featuring MD
 - 🚀 **Modern Stack** - TypeScript, Tailwind CSS, and cutting-edge web technologies
 
 ## 🏗️ Project Structure
+```
 terminal-theme-nextjs/
 ├── content/
 │   └── posts/                 # MDX blog posts
@@ -45,6 +46,7 @@ terminal-theme-nextjs/
 ├── mdx-components.tsx         # Global MDX component mapping
 ├── next.config.ts             # Next.js configuration
 └── package.json               # Dependencies and scripts
+```
 
 ## 🛠️ Tech Stack
 
