@@ -9,6 +9,12 @@ interface CodeBlockProps {
   title?: string
 }
 
+interface ReactElementWithProps {
+  props: {
+    children: React.ReactNode
+  }
+}
+
 export function CodeBlock({ children, className, title }: CodeBlockProps) {
   const [copied, setCopied] = useState(false)
   
@@ -26,7 +32,7 @@ export function CodeBlock({ children, className, title }: CodeBlockProps) {
       return children.map(extractTextFromChildren).join('')
     }
     if (children && typeof children === 'object' && 'props' in children) {
-      return extractTextFromChildren((children as any).props.children)
+      return extractTextFromChildren((children as ReactElementWithProps).props.children)
     }
     return ''
   }

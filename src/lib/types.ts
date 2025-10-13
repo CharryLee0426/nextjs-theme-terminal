@@ -17,4 +17,4 @@ export interface Post extends PostFrontmatter {
   wordCount: number
 }
 
-export interface PostWithoutContent extends Omit<Post, 'content'> {}
+export type PostWithoutContent = Omit<Post, 'content'>
