@@ -1,25 +1,33 @@
 'use client'
 
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 import { Menu, X, Terminal } from 'lucide-react'
 
 export function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const pathname = usePathname()
 
   const toggleMenu = () => setIsMenuOpen(!isMenuOpen)
+
+  // Format the pathname for display
+  const formatPath = (path: string) => {
+    if (path === '/') return '~'
+    return `~${path}`
+  }
 
   return (
     <header className="header">
       <div className="container">
         <div className="header__inner">
-          {/* Terminal-style logo */}
+          {/* Terminal-style logo with current path */}
           <div className="header__logo">
             <Link href="/" className="logo">
               <span className="logo__mark">
                 <Terminal size={20} />
               </span>
-              <span className="logo__text">terminal</span>
+              <span className="logo__text">charry@terminal:{formatPath(pathname)}</span>
               <span className="logo__cursor"></span>
             </Link>
           </div>
