@@ -1,3 +1,5 @@
+import Link from 'next/link'
+
 export const metadata = {
   title: 'About',
   description: 'About CharryLee - Software Developer & Terminal Enthusiast',
@@ -14,9 +16,9 @@ export default function AboutPage() {
       <h1>About Me</h1>
       
       <section className="about-section">
-        <h2>👋 Hello, I'm CharryLee</h2>
+        <h2>👋 Hello, I&apos;m CharryLee</h2>
         <p>
-          Welcome to my digital terminal! I'm a passionate software developer who loves 
+          Welcome to my digital terminal! I&apos;m a passionate software developer who loves 
           building elegant solutions and exploring the intersection of technology and creativity.
         </p>
       </section>
@@ -41,7 +43,7 @@ export default function AboutPage() {
         <h2>🌟 Current Focus</h2>
         <p>
           Currently exploring the latest in web development, contributing to open source 
-          projects, and building tools that make developers' lives easier. I'm particularly 
+          projects, and building tools that make developers&apos; lives easier. I&apos;m particularly 
           interested in:
         </p>
         <ul>
@@ -57,14 +59,14 @@ export default function AboutPage() {
         <p>
           I believe in writing clean, maintainable code and creating user experiences 
           that are both functional and delightful. Every project is an opportunity to 
-          learn something new and push the boundaries of what's possible.
+          learn something new and push the boundaries of what&apos;s possible.
         </p>
       </section>
 
       <section className="about-section">
         <h2>📫 Get In Touch</h2>
         <p>
-          Feel free to reach out if you'd like to collaborate on a project, discuss 
+          Feel free to reach out if you&apos;d like to collaborate on a project, discuss 
           technology, or just say hello!
         </p>
         <div className="contact-links">
@@ -74,13 +76,13 @@ export default function AboutPage() {
           <span className="separator">•</span>
           <a href="mailto:contact@example.com">Email</a>
           <span className="separator">•</span>
-          <a href="/posts">Blog</a>
+          <Link href="/posts">Blog</Link>
         </div>
       </section>
 
       <div className="terminal-footer">
         <span className="terminal-prompt">charry@terminal:~$</span>
-        <span className="terminal-command">echo "Thanks for visiting!"</span>
+        <span className="terminal-command">echo &quot;Thanks for visiting!&quot;</span>
         <div className="terminal-output">Thanks for visiting!</div>
       </div>
     </div>

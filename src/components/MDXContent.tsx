@@ -8,24 +8,35 @@ interface MDXContentProps {
   source: string
 }
 
+interface HeadingProps {
+  children: React.ReactNode
+  [key: string]: unknown
+}
+
+interface LinkProps {
+  href?: string
+  children: React.ReactNode
+  [key: string]: unknown
+}
+
 const components = {
   pre: CodeBlock,
   img: CustomImage,
   Callout,
   YouTube: YouTubeEmbed,
   // Custom heading with anchor links
-  h2: ({ children, ...props }: any) => (
+  h2: ({ children, ...props }: HeadingProps) => (
     <h2 id={slugify(children)} {...props}>
       {children}
     </h2>
   ),
-  h3: ({ children, ...props }: any) => (
+  h3: ({ children, ...props }: HeadingProps) => (
     <h3 id={slugify(children)} {...props}>
       {children}
     </h3>
   ),
   // Custom link component
-  a: ({ href, children, ...props }: any) => {
+  a: ({ href, children, ...props }: LinkProps) => {
     const isExternal = href?.startsWith('http')
     return (
       <a
@@ -40,14 +51,14 @@ const components = {
   },
 }
 
-function slugify(text: any): string {
+function slugify(text: React.ReactNode): string {
   return text
-    .toString()
+    ?.toString()
     .toLowerCase()
     .trim()
     .replace(/\s+/g, '-')
     .replace(/[^\w\-]+/g, '')
-    .replace(/\-\-+/g, '-')
+    .replace(/\-\-+/g, '-') || ''
 }
 
 export function MDXContent({ source }: MDXContentProps) {
