@@ -1,0 +1,335 @@
+---
+title: "Terminal Theme Showcase"
+description: "A comprehensive demonstration of all terminal theme features and capabilities"
+pubDate: "2024-01-20"
+author: "Terminal Dev"
+tags: ["showcase", "terminal", "features", "demo", "nextjs", "mdx"]
+image: "/terminal-preview.svg"
+---
+
+# Terminal Theme Showcase
+
+Welcome to the **Terminal Theme Showcase**! This post demonstrates all the powerful features and capabilities of our Next.js terminal-themed blog system.
+
+<Callout type="info" title="What You'll See">
+This showcase covers typography, code blocks, components, styling, and interactive elements that make this terminal theme unique.
+</Callout>
+
+## Typography & Headings
+
+The terminal theme uses **Fira Code** monospace font for that authentic terminal feel.
+
+### Level 3 Heading
+#### Level 4 Heading
+##### Level 5 Heading
+###### Level 6 Heading
+
+## Text Formatting
+
+Here's how different text formatting looks in our terminal theme:
+
+- **Bold text** for emphasis
+- *Italic text* for subtle emphasis
+- `inline code` with terminal styling
+- ~~Strikethrough text~~ for corrections
+- [Links with terminal hover effects](/posts)
+
+## Code Blocks & Syntax Highlighting
+
+### JavaScript/TypeScript
+```typescript title="terminal-utils.ts"
+interface TerminalCommand {
+  command: string
+  output: string
+  timestamp: Date
+}
+
+class Terminal {
+  private history: TerminalCommand[] = []
+  
+  execute(command: string): string {
+    const output = this.processCommand(command)
+    this.history.push({
+      command,
+      output,
+      timestamp: new Date()
+    })
+    return output
+  }
+  
+  private processCommand(cmd: string): string {
+    switch (cmd.toLowerCase()) {
+      case 'help':
+        return 'Available commands: help, clear, ls, pwd'
+      case 'clear':
+        this.history = []
+        return 'Terminal cleared'
+      case 'ls':
+        return 'posts/  components/  lib/  public/'
+      case 'pwd':
+        return '/home/user/terminal-blog'
+      default:
+        return `Command not found: ${cmd}`
+    }
+  }
+}
+
+export default Terminal
+```
+
+### Python
+```python title="terminal_theme.py"
+#!/usr/bin/env python3
+
+class TerminalTheme:
+    def __init__(self):
+        self.colors = {
+            'green': '#00ff41',
+            'blue': '#66d9ef', 
+            'yellow': '#e6db74',
+            'red': '#f92672',
+            'purple': '#ae81ff'
+        }
+    
+    def render_prompt(self, user='user', path='~'):
+        return f"{user}@terminal:{path}$ "
+    
+    def colorize(self, text, color):
+        if color in self.colors:
+            return f"\033[38;2;{self.hex_to_rgb(self.colors[color])}m{text}\033[0m"
+        return text
+    
+    def hex_to_rgb(self, hex_color):
+        hex_color = hex_color.lstrip('#')
+        return ';'.join(str(int(hex_color[i:i+2], 16)) for i in (0, 2, 4))
+
+# Usage
+theme = TerminalTheme()
+print(theme.render_prompt('dev', '/projects/blog'))
+```
+
+### Bash/Shell Commands
+```bash title="setup.sh"
+#!/bin/bash
+
+# Terminal Theme Setup Script
+echo "Setting up Terminal Theme..."
+
+# Install dependencies
+npm install next-mdx-remote
+npm install @types/mdx
+
+# Create directory structure
+mkdir -p content/posts
+mkdir -p src/components
+mkdir -p public/images
+
+# Set permissions
+chmod +x scripts/*.sh
+
+echo "✅ Terminal theme setup complete!"
+echo "Run 'npm run dev' to start the development server"
+```
+
+### JSON Configuration
+```json title="terminal-config.json"
+{
+  "theme": {
+    "name": "terminal",
+    "version": "1.0.0",
+    "colors": {
+      "primary": "#00ff41",
+      "secondary": "#ffa86a", 
+      "background": "#1d1e20",
+      "foreground": "#c9c9c9"
+    },
+    "fonts": {
+      "primary": "Fira Code",
+      "fallback": ["SF Mono", "Monaco", "monospace"]
+    },
+    "features": {
+      "syntaxHighlighting": true,
+      "codeBlocks": true,
+      "terminalPrompt": true,
+      "blinkingCursor": true
+    }
+  }
+}
+```
+
+## Terminal Commands & Prompts
+
+You can style text to look like terminal commands:
+
+<div className="terminal-prompt">ls -la</div>
+
+```bash
+$ cd /projects/terminal-blog
+$ npm run dev
+> terminal-theme-nextjs@0.1.0 dev
+> next dev --turbopack
+
+  ▲ Next.js 15.5.4
+  - Local:        http://localhost:3000
+  - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 2.1s
+```
+
+## Callout Components
+
+<Callout type="info" title="Information">
+This is an informational callout with terminal styling.
+</Callout>
+
+<Callout type="success" title="Success">
+Great! Your terminal theme is working perfectly.
+</Callout>
+
+<Callout type="warning" title="Warning">
+Be careful when modifying core terminal configurations.
+</Callout>
+
+<Callout type="error" title="Error">
+Command not found. Check your syntax and try again.
+</Callout>
+
+## Lists & Organization
+
+### Unordered Lists
+- Terminal emulation features
+- Syntax highlighting
+- Responsive design
+- SEO optimization
+  - Meta tags
+  - Open Graph
+  - Twitter Cards
+- Performance optimized
+  - Static generation
+  - Image optimization
+  - Code splitting
+
+### Ordered Lists
+1. **Setup** - Install dependencies and configure
+2. **Development** - Write content and customize
+3. **Build** - Generate static site
+4. **Deploy** - Publish to your hosting platform
+
+### Task Lists
+- [x] Terminal theme implementation
+- [x] MDX content support
+- [x] Syntax highlighting
+- [x] Responsive design
+- [ ] Dark/light mode toggle
+- [ ] Search functionality
+- [ ] Comment system
+
+## Blockquotes
+
+> "The terminal is not just a tool, it's a way of thinking about computing that emphasizes directness, efficiency, and power."
+> 
+> — Terminal Philosophy
+
+> **Pro Tip:** Use the terminal theme to create documentation, tutorials, and technical blogs that feel authentic to developers.
+
+## Tables
+
+| Feature | Status | Description |
+|---------|--------|-------------|
+| MDX Support | ✅ | Full React component support |
+| Syntax Highlighting | ✅ | Multiple language support |
+| Terminal Styling | ✅ | Authentic terminal aesthetics |
+| Responsive Design | ✅ | Mobile-first approach |
+| SEO Optimized | ✅ | Meta tags and structured data |
+| Performance | ✅ | Static generation + optimization |
+
+## Images & Media
+
+![Terminal Preview](/terminal-preview.svg)
+
+## Mathematical Expressions
+
+The terminal theme supports mathematical expressions:
+
+Inline math: `E = mc²`
+
+
+## Interactive Elements
+
+### Code with Copy Functionality
+```javascript title="copy-example.js"
+// This code block includes a copy button
+function greetTerminal() {
+  console.log('Hello from the terminal! 🖥️')
+  console.log('Welcome to the future of blogging')
+}
+
+greetTerminal()
+```
+
+## Advanced Features
+
+### Custom Components
+<Callout type="info" title="Component System">
+The terminal theme supports custom React components within MDX content.
+</Callout>
+
+### YouTube Embeds
+<YouTube id="dQw4w9WgXcQ" title="Terminal Theme Demo" />
+
+## Performance Metrics
+
+```typescript title="performance-stats.ts"
+interface PerformanceMetrics {
+  buildTime: string
+  bundleSize: string
+  lighthouse: {
+    performance: number
+    accessibility: number
+    bestPractices: number
+    seo: number
+  }
+}
+
+const metrics: PerformanceMetrics = {
+  buildTime: "< 30s",
+  bundleSize: "< 100KB",
+  lighthouse: {
+    performance: 100,
+    accessibility: 100, 
+    bestPractices: 100,
+    seo: 100
+  }
+}
+```
+
+## Terminal Art
+████████╗███████╗██████╗ ███╗   ███╗██╗███╗   ██╗ █████╗ ██╗ ╚══██╔══╝██╔════╝██╔══██╗████╗ ████║██║████╗  ██║██╔══██╗██║ ██║   █████╗  ██████╔╝██╔████╔██║██║██╔██╗ ██║███████║██║ ██║   ██╔══╝  ██╔══██╗██║╚██╔╝██║██║██║╚██╗██║██╔══██║██║ ██║   ███████╗██║  ██║██║ ╚═╝ ██║██║██║ ╚████║██║  ██║███████╗
+╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝
+
+████████╗██╗  ██╗███████╗███╗   ███╗███████╗ ╚══██╔══╝██║  ██║██╔════╝████╗ ████║██╔════╝ ██║   ███████║█████╗  ██╔████╔██║█████╗ ██║   ██╔══██║██╔══╝  ██║╚██╔╝██║██╔══╝ ██║   ██║  ██║███████╗██║ ╚═╝ ██║███████╗ ╚═╝   ╚═╝  ╚═╝╚══════╝╚═╝     ╚═╝╚══════╝
+
+## Conclusion
+
+<Callout type="success" title="Terminal Theme Complete">
+You've now seen all the powerful features of the Terminal Theme! From syntax highlighting to interactive components, this theme provides everything you need for a modern, developer-focused blog.
+</Callout>
+
+### What's Next?
+
+1. **Customize** - Modify colors, fonts, and layouts
+2. **Extend** - Add new components and features  
+3. **Deploy** - Share your terminal-themed blog with the world
+4. **Contribute** - Help improve the theme for everyone
+
+```bash
+$ git add .
+$ git commit -m "feat: terminal theme showcase complete"
+$ git push origin main
+$ echo "Happy coding! 🚀"
+```
+
+---
+
+*This showcase demonstrates the full capabilities of the Terminal Theme. Feel free to use this as a reference for creating your own content!*
