@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import './globals.css'
+import 'katex/dist/katex.min.css'
 
 const inter = Inter({ subsets: ['latin'] })
 

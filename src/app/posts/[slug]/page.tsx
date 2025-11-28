@@ -6,7 +6,7 @@ import { FormattedDate } from '@/components/FormattedDate'
 import { MDXContent } from '@/components/MDXContent'
 
 interface PostPageProps {
-  params: { slug: string }
+  params: Promise<{ slug: string }>
 }
 
 export async function generateStaticParams() {
@@ -17,7 +17,8 @@ export async function generateStaticParams() {
 }
 
 export async function generateMetadata({ params }: PostPageProps) {
-  const post = await getPostBySlug(params.slug)
+  const { slug } = await params
+  const post = await getPostBySlug(slug)
   
   if (!post) {
     return {
@@ -41,13 +42,14 @@ export async function generateMetadata({ params }: PostPageProps) {
 }
 
 export default async function PostPage({ params }: PostPageProps) {
-  const post = await getPostBySlug(params.slug)
+  const { slug } = await params
+  const post = await getPostBySlug(slug)
   
   if (!post) {
     notFound()
   }
 
-  const { prevPost, nextPost } = await getAdjacentPosts(params.slug)
+  const { prevPost, nextPost } = await getAdjacentPosts(slug)
 
   return (
     <article>

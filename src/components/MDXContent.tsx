@@ -4,6 +4,8 @@ import { CustomImage } from './CustomImage'
 import { Callout } from './Callout'
 import { YouTubeEmbed } from './YouTubeEmbed'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
 
 interface MDXContentProps {
   source: string
@@ -63,5 +65,16 @@ function slugify(text: React.ReactNode): string {
 }
 
 export function MDXContent({ source }: MDXContentProps) {
-  return <MDXRemote source={source} components={components} options={{mdxOptions: {remarkPlugins: [remarkGfm]}}} />
+  return (
+    <MDXRemote
+      source={source}
+      components={components}
+      options={{
+        mdxOptions: {
+          remarkPlugins: [remarkGfm, remarkMath],
+          rehypePlugins: [rehypeKatex],
+        },
+      }}
+    />
+  )
 }
