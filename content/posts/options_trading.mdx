@@ -1,0 +1,552 @@
+---
+title: "Options Trading"
+pubDate: "2025-11-27"
+description: "This is my note for learning 8086 assembly language"
+tag: ["options", "trading", "finance"]
+---
+
+# Options Trading Strategies Tutorial
+## A Comprehensive Guide with Real Examples and Visualizations
+
+---
+
+## Table of Contents
+
+1. Introduction to Options
+2. Basic Concepts
+3. Single Leg Strategies
+4. Multi-Leg Strategies
+5. Risk Management
+6. Real-World Examples
+7. Resources and Further Learning
+
+---
+
+## 1. Introduction to Options
+
+An option is a financial derivative that gives the holder the right, but not the obligation, to buy or sell an underlying asset at a predetermined price (strike price) on or before an expiration date. Options are widely used by investors for hedging, income generation, and speculation[1][2].
+
+### Why Trade Options?
+
+- **Leverage**: Control a larger position with less capital
+- **Flexibility**: Multiple strategies for different market outlooks
+- **Income**: Generate premiums through selling options
+- **Protection**: Hedge existing stock positions
+- **Defined Risk**: Know your maximum loss upfront (in many strategies)
+
+### Key Statistics
+
+- Retail traders lost over USD 2 billion in options premium from 2019 to 2021[1]
+- The most traded stock options are Tesla (TSLA), Apple (AAPL), and Nvidia (NVDA)[1]
+- Many out-of-the-money options expire worthless[1]
+
+---
+
+## 2. Basic Concepts
+
+### Call Options
+
+A **call option** gives the buyer the right to purchase an underlying asset at the strike price before expiration[2].
+
+**Key Characteristics:**
+- Buyer pays premium upfront
+- Buyer profits if stock price rises above strike + premium
+- Seller (writer) profits if stock stays below strike price
+- Maximum loss for buyer = premium paid
+- Maximum profit for seller = premium received
+
+**Real Example - Tesla Call:**
+- Current TSLA price: $250
+- Buy 1 call option: Strike $260, Premium $5 (or $500 per contract)
+- Expiration: 30 days
+- Break-even at expiration: $265
+- Maximum loss: $500
+- Maximum profit: Unlimited
+
+### Put Options
+
+A **put option** gives the buyer the right to sell an underlying asset at the strike price before expiration[2].
+
+**Key Characteristics:**
+- Buyer pays premium upfront
+- Buyer profits if stock price falls below strike - premium
+- Seller profits if stock stays above strike price
+- Maximum loss for buyer = premium paid
+- Maximum profit for seller = premium received (but limited to strike price)
+
+**Real Example - Apple Put:**
+- Current AAPL price: $230
+- Buy 1 put option: Strike $220, Premium $3 (or $300 per contract)
+- Expiration: 30 days
+- Break-even at expiration: $217
+- Maximum loss: $300
+- Maximum profit: $20,000 (if AAPL goes to $0)
+
+### Greeks: The Risk Metrics
+
+Options prices don't move 1:1 with stock price. Understanding the Greeks helps traders predict price movements:
+
+\begin{table}
+\begin{tabular}{|l|l|c|}
+\hline
+Greek & Meaning & Impact \\
+\hline
+Delta & Rate of change in option price vs stock price & 0 to 1 (calls), -1 to 0 (puts) \\
+Gamma & Rate of change in Delta & Affects Delta stability \\
+Theta & Time decay (loss per day) & Negative for buyers, positive for sellers \\
+Vega & Sensitivity to volatility changes & Higher IV = Higher option prices \\
+Rho & Sensitivity to interest rates & Less important for short-term trades \\
+\hline
+\end{tabular}
+\end{table}
+
+---
+
+## 3. Single Leg Strategies (One-Legged)
+
+### Strategy 1: Long Call (Bullish)
+
+**Outlook:** Moderately to very bullish
+
+**Description:** Buy a call option, expecting the stock price to rise above the strike price plus the premium paid[2].
+
+**Setup:**
+- Buy 1 call option
+- Pay premium upfront
+- Choose strike price based on target price
+
+**Profit/Loss Profile:**
+
+See Chart 1: Long Call Strategy P&L (chart:11)
+
+The chart shows:
+- **Maximum Loss:** Premium paid ($200 in example)
+- **Maximum Gain:** Unlimited
+- **Break-even:** Strike price + Premium paid ($110 + $2 = $112)
+- **Profit Zone:** Stock price above $112 at expiration
+
+**Real Example:**
+- Current price: $100
+- Buy 1 call: Strike $110, Premium $2 per share ($200 total)
+- Scenario 1: Stock rises to $120 at expiration → Profit: $800
+- Scenario 2: Stock stays at $100 → Loss: $200
+- Scenario 3: Stock falls to $90 → Loss: $200 (max loss)
+
+**When to Use:**
+- You expect a significant price increase
+- Volatility is expected to increase
+- You want leveraged exposure with limited downside
+
+**Advantages:**
+- Limited risk (premium paid)
+- Unlimited profit potential
+- Capital efficient
+
+**Disadvantages:**
+- Time decay works against you
+- Requires stock to move above break-even
+- Premium paid is lost if stock doesn't rise enough
+
+---
+
+### Strategy 2: Long Put (Bearish)
+
+**Outlook:** Moderately to very bearish
+
+**Description:** Buy a put option, expecting the stock price to fall below the strike price minus the premium paid[2].
+
+**Setup:**
+- Buy 1 put option
+- Pay premium upfront
+- Choose strike price below current price
+
+**Profit/Loss Profile:**
+- **Maximum Loss:** Premium paid
+- **Maximum Gain:** (Strike price × 100) - Premium paid
+- **Break-even:** Strike price - Premium paid
+- **Profit Zone:** Stock price below break-even at expiration
+
+**Real Example:**
+- Current price: $100
+- Buy 1 put: Strike $95, Premium $2 per share ($200 total)
+- Scenario 1: Stock falls to $80 at expiration → Profit: $1,300
+- Scenario 2: Stock stays at $100 → Loss: $200
+- Scenario 3: Stock rises to $110 → Loss: $200 (max loss)
+
+**When to Use:**
+- You expect a significant price decrease
+- You want to bet against a stock
+- Market volatility is expected to increase
+
+**Advantages:**
+- Limited risk (premium paid)
+- Profit potential if market drops
+- Simple to understand and execute
+
+**Disadvantages:**
+- Time decay works against you
+- Requires stock to move below break-even
+- Expensive to buy protective puts far out-of-the-money
+
+---
+
+### Strategy 3: Covered Call (Income)
+
+**Outlook:** Neutral to mildly bullish
+
+**Description:** Own the stock and sell a call option against it. This generates income (premium) while capping your upside potential[2].
+
+**Setup:**
+- Own 100+ shares of stock
+- Sell 1 call per 100 shares
+- Call strike is typically above current price (out-of-the-money)
+
+**Real Example:**
+- Own 100 shares of Microsoft at $380
+- Sell 1 call: Strike $400, Premium $5 per share ($500 total)
+- Scenario 1: Stock stays at $380 or below at expiration
+  - You keep the stock and the $500 premium
+  - Return on investment: $500 / $38,000 = 1.3%
+- Scenario 2: Stock rises to $420 at expiration
+  - Your shares get called away at $400
+  - Profit: ($400 - $380) × 100 + $500 = $2,500
+  - Maximum profit is capped
+- Scenario 3: Stock falls to $360 at expiration
+  - You keep the stock and the $500 premium
+  - This premium helps offset losses
+
+**When to Use:**
+- You own stock long-term and want additional income
+- You're willing to sell the stock if it rises significantly
+- You expect mild to no price movement
+- Market is range-bound
+
+**Advantages:**
+- Generates income from existing holdings
+- Reduces cost basis of stock
+- Easier to sustain losses through premium collection
+- Lower risk than owning stock outright
+
+**Disadvantages:**
+- Caps your upside profit potential
+- Still exposed to significant downside losses
+- Called away from stock during a strong rally
+
+---
+
+## 4. Multi-Leg Strategies
+
+### Strategy 4: Protective Put (Hedging)
+
+**Outlook:** Neutral to bullish with downside protection
+
+**Description:** Own stock and buy a put option to protect against significant losses. Also called "married put" or "portfolio insurance"[2].
+
+**Setup:**
+- Own 100+ shares of stock
+- Buy 1 put per 100 shares
+- Put strike is typically at or near support level
+
+**Profit/Loss Profile:**
+
+See Chart 2: Protective Put Strategy P&L (chart:12)
+
+The chart illustrates:
+- **Maximum Loss:** (Stock price at purchase - Put strike price) + Put premium paid
+- **Maximum Gain:** Unlimited
+- **Break-even:** Stock purchase price + Put premium
+- **Protection Floor:** Put strike price (can't lose more than put cost below strike)
+
+**Real Example:**
+- Own 100 shares of Apple at $230
+- Buy 1 put: Strike $220, Premium $5 per share ($500 total)
+- Stock currently trades at $230
+- Scenario 1: Stock falls to $200 at expiration
+  - Without protection: Loss of $3,000
+  - With protection: Loss of $500 (put premium) + $0 (capped by $220 strike)
+  - Total loss: Only $500
+- Scenario 2: Stock rises to $250 at expiration
+  - Profit: ($250 - $230) × 100 - $500 = $1,500
+  - Put expires worthless but provided insurance
+- Scenario 3: Stock stays at $230
+  - Loss: Put premium ($500)
+  - Think of it as insurance cost
+
+**When to Use:**
+- You own stock but fear a temporary correction
+- You want to preserve gains but stay invested
+- Earnings announcement is coming (high volatility risk)
+- Market uncertainty is high
+
+**Advantages:**
+- Provides downside protection with defined maximum loss
+- Maintains unlimited upside potential
+- Peace of mind during volatile periods
+- Can enable more aggressive position sizing
+
+**Disadvantages:**
+- Put premium is a sunk cost if stock rallies
+- Reduces overall returns in bull markets
+- Expensive when volatility is already high
+- Ongoing cost if you want continuous protection
+
+---
+
+### Strategy 5: Bull Call Spread (Bullish with Limited Risk)
+
+**Outlook:** Moderately bullish
+
+**Description:** Buy an in-the-money or at-the-money call, then sell a higher-strike out-of-the-money call. This reduces your cost and limits profit potential[2].
+
+**Setup:**
+- Buy 1 call at lower strike (pay premium)
+- Sell 1 call at higher strike (receive premium)
+- Both calls expire on same date
+- Same underlying asset
+
+**Profit/Loss Profile:**
+
+See Chart 3: Bull Call Spread P&L (chart:13)
+
+**Real Example - Using Tesla:**
+- Current TSLA price: $250
+- Buy 1 call: Strike $250, Premium $12 per share ($1,200)
+- Sell 1 call: Strike $260, Premium $7 per share ($700)
+- Net Debit: $1,200 - $700 = $500 per spread
+- Scenario 1: TSLA stays at $250 at expiration
+  - Loss: $500 (premium paid)
+- Scenario 2: TSLA rises to $255 at expiration
+  - Profit: ($255 - $250) × 100 - $500 = $0 (break-even near)
+- Scenario 3: TSLA rises to $260 at expiration
+  - Maximum profit: ($260 - $250) × 100 - $500 = $500
+- Scenario 4: TSLA rises to $270 at expiration
+  - Profit: Still $500 (capped by short call)
+  - Excess gains beyond $260 are lost to short call
+
+**When to Use:**
+- You're bullish but want to reduce cost
+- You want defined risk and reward
+- Capital preservation is important
+- You expect moderate price increase
+
+**Advantages:**
+- Lower cost than simple call purchase
+- Defined maximum loss (net debit paid)
+- Defined maximum profit (width of strikes - net debit)
+- Higher probability of profit than long call alone
+- Better risk/reward ratio
+
+**Disadvantages:**
+- Profit potential is capped
+- More complex than single-leg strategies
+- Requires two separate transactions
+- May have wider bid-ask spread
+
+**Real-World Application:**
+A trader using $5,000 capital could buy 10 spreads instead of 4 long calls, controlling 1,000 shares worth $250,000 with better defined risk.
+
+---
+
+### Strategy 6: Iron Condor (Income in Range-Bound Market)
+
+**Outlook:** Neutral to slightly bullish or bearish
+
+**Description:** Sell both a call spread (above current price) and put spread (below current price) to profit from a stock staying in a range[1].
+
+**Setup:**
+- Sell 1 out-of-the-money call at higher strike
+- Buy 1 out-of-the-money call at even higher strike
+- Sell 1 out-of-the-money put at lower strike
+- Buy 1 out-of-the-money put at even lower strike
+- All same expiration
+
+**Profit/Loss Profile:**
+
+See Chart 4: Iron Condor P&L (chart:14)
+
+**Real Example - Using Nvidia:**
+- Current NVDA price: $100
+- Sell call: Strike $110, receive $3 per share ($300)
+- Buy call: Strike $115, pay $1 per share ($100)
+- Sell put: Strike $90, receive $3 per share ($300)
+- Buy put: Strike $85, pay $1 per share ($100)
+- Total Credit Received: $300 + $300 - $100 - $100 = $400
+- Scenario 1: NVDA stays between $90-$110 at expiration
+  - Maximum profit: $400 (all options expire worthless)
+- Scenario 2: NVDA rises to $112 at expiration
+  - Loss: ($112 - $110) × 100 - $400 = -$200 (loss starts)
+- Scenario 3: NVDA falls to $88 at expiration
+  - Loss: ($90 - $88) × 100 - $400 = -$200 (loss starts)
+- Scenario 4: NVDA rises to $120 at expiration
+  - Maximum loss: ($115 - $110) × 100 - $400 = $100
+- Scenario 5: NVDA falls to $80 at expiration
+  - Maximum loss: ($90 - $85) × 100 - $400 = $100
+
+**When to Use:**
+- Market is expected to stay range-bound
+- Implied volatility is high (premiums are fat)
+- You want consistent income from a stable stock
+- You can actively manage positions
+
+**Advantages:**
+- Profitable in non-moving market (high probability)
+- Well-defined risk and reward
+- Collect premium from both sides
+- Lower margin requirements than naked positions
+- Can target 50%+ win rate
+
+**Disadvantages:**
+- Maximum profit is limited to credit received
+- Risk can be larger than profit in worst case
+- Requires active management near expiration
+- Complex position to manage
+- May tie up substantial margin/capital
+
+**Key Point:** Iron condors work best in range-bound markets with high implied volatility at entry.
+
+---
+
+## 5. Risk Management Principles
+
+### Position Sizing
+
+Never risk more than 2-5% of your trading capital on a single trade[2]. For a $50,000 account:
+- 2% = $1,000 maximum risk per trade
+- 5% = $2,500 maximum risk per trade
+
+### Using Stop Losses
+
+Set predetermined exit points:
+
+\begin{itemize}
+\item Close losing positions at 50% of max loss
+\item Take profits at 50-75% of max profit (don't wait for expiration)
+\item Use mental or hard stops to enforce discipline
+\end{itemize}
+
+### Volatility Considerations
+
+- **High Volatility:** Premiums are expensive (good for selling options, bad for buying)
+- **Low Volatility:** Premiums are cheap (good for buying options, bad for selling)
+- **VIX levels:** Check the VIX index (volatility index) before entering trades
+
+### Expiration Management
+
+\begin{itemize}
+\item Be aware of time decay as expiration approaches
+\item Theta (time decay) accelerates in final week before expiration
+\item Don't wait until last day unless you have a specific plan
+\item Close positions 1-2 weeks before expiration to avoid assignment surprises
+\end{itemize}
+
+### Probability of Profit (PoP)
+
+- **Delta approximates PoP** - A $50 call with 0.30 delta has ~30% chance of profit at expiration
+- Target 60%+ PoP for income strategies
+- Accept lower PoP (30-40%) for directional bets if risk/reward is good
+
+---
+
+## 6. Real-World Examples
+
+### Example 1: Earnings Hedge
+
+**Scenario:** You own 100 shares of Apple at $220. Earnings are in 3 days, and implied volatility is expected to crush 50% after earnings.
+
+**Setup:**
+- Own 100 AAPL shares
+- Buy 1 put: Strike $210, Premium $2.50, 30 days to expiration
+- Cost: $250
+
+**Expected Outcome:**
+- If stock stays near $220 before earnings: Premium may rise due to volatility
+- If stock drops 10% to $198: Protected by $210 put
+- If stock rallies to $240: Participate in gains, only loss is put premium
+
+**Result:** Define risk while participating in upside
+
+---
+
+### Example 2: Generating Income on Cash-Secured Puts
+
+**Scenario:** You have $10,000 in cash and want to generate income.
+
+**Setup:**
+- Sell 1 put: Strike $200, Expiration 30 days, Premium $3 per share ($300)
+- Keep $20,000 cash reserved (strike × 100 shares)
+
+**Expected Outcome:**
+- If stock stays above $200: Premium is yours ($300 profit)
+- Annualized return: $300 × 12 = $3,600 per $20,000 = 18% return
+- If stock falls to $190: Assigned at $200, own stock below market
+- Can then sell covered calls on the assigned shares
+
+---
+
+### Example 3: Bull Call Spread for Limited Capital
+
+**Scenario:** You have only $2,000 to deploy on Nvidia which trades at $100, but want exposure to 1,000 shares worth.
+
+**Setup:**
+- Buy 10 bull call spreads
+- Buy 10 calls: Strike $100, Premium $8 per share ($800)
+- Sell 10 calls: Strike $110, Premium $3 per share ($300)
+- Net debit: $500 per spread = $5,000 total
+  - Actually $5,000 total, not $2,000 - adjust to fit capital
+
+**Adjusted Setup** (with $2,000):
+- Buy 4 bull call spreads
+- Buy 4 calls: Strike $100, Premium $8 per share ($3,200)
+- Sell 4 calls: Strike $110, Premium $3 per share ($1,200)
+- Net debit: $500 × 4 = $2,000
+
+**Outcome:**
+- Max profit: $1,000 (if NVDA reaches $110): $100 × 10 width × 4 spreads - $2,000
+- Max loss: $2,000
+- Capital efficiency: Control $40,000 notional with $2,000 capital
+
+---
+
+## 7. Common Mistakes to Avoid
+
+\begin{enumerate}
+\item \textbf{Buying out-of-the-money options} - Low probability, money disappears quickly
+\item \textbf{Holding through expiration} - Don't wait; close early to avoid assignment surprises
+\item \textbf{Ignoring Greeks} - Delta, Theta, and Vega matter for price predictions
+\item \textbf{Over-leveraging} - Risk only 2-5% per trade
+\item \textbf{Not understanding assignment} - Short options can be assigned unexpectedly
+\item \textbf{Selling naked calls} - Unlimited loss potential; requires portfolio margin
+\item \textbf{Picking earnings plays blindly} - Volatility crush is real after earnings
+\item \textbf{Not tracking probability} - Use delta as proxy for probability of profit
+\end{enumerate}
+
+---
+
+## 8. Key Takeaways
+
+| Concept | Key Point |
+|---|---|
+| **Call Options** | Right to buy. Profit from rising prices. Max loss = premium paid |
+| **Put Options** | Right to sell. Profit from falling prices. Max loss = premium paid |
+| **Long Call** | Bullish, unlimited profit, limited loss |
+| **Protective Put** | Hedging strategy, downside protection, costs money |
+| **Covered Call** | Income from stock ownership, capped upside |
+| **Bull Call Spread** | Bullish, limited risk and profit, lower cost |
+| **Iron Condor** | Neutral outlook, range-bound profits, income focused |
+| **Risk Management** | Risk 2-5% per trade, use stops, monitor Greeks |
+| **Time Decay** | Works against buyers, for sellers. Accelerates near expiration |
+| **Greeks** | Delta (direction), Theta (time), Vega (volatility), Gamma (acceleration) |
+
+---
+
+## References
+
+[1] Quantified Strategies. (2024). Options Trading Statistics 2025: Data And Facts. Retrieved from https://www.quantifiedstrategies.com/options-trading-statistics/
+
+[2] Alpaca Markets. (2025). Calls Vs Puts: A Beginner's Guide to Options Trading. Retrieved from https://alpaca.markets/learn/calls-vs-puts-a-beginners-guide-to-options-trading
+
+[3] NerdWallet. (2024). 5 Options Trading Strategies For Beginners. Retrieved from https://www.nerdwallet.com/investing/learn/options-trading-strategies
+
+---
+
+**Disclaimer:** This tutorial is for educational purposes only. Options trading involves substantial risk of loss. Paper trade first, understand your broker's margin requirements, and consult a financial advisor before trading real money. Past performance does not guarantee future results.
