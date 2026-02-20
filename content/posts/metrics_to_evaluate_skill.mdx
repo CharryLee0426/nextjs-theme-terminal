@@ -1,0 +1,79 @@
+---
+title: "Metrics to Evaluate Skill"
+author: "Chen Li"
+date: "2026-02-20"
+tags: ["automation", "ai", "skill"]
+---
+
+# How to evaluate a skill by Metrics
+
+## 0. Why do we need to evaluate a skill by metrics?
+In daily work, we've written so many skills(this skill refers to claude skill, or `SKILL.md`). However, the main pain point is
+how to evaluate a skill. Especially, how do we know our changes improve the skill but not degrade it when we do skill upgrade such
+as optimizing some page templates, or changing skill opening parameters.
+
+In the past, we mainly rely on manual testing. But it's low efficient and lack of reproducibility. So I come up with the idea to introduce
+*Fornax* to evaluate the skill automatically, which aims to quantilize the skill performance and providing data to help upgrade skills.
+
+# 1. The workflow of fornax automation evaluation
+
+(1) Execute add test set skillA -> (2) Evaluate inputs and outputs of skillB -> (3) Build fornax data structure -> (4) Call the script to create an evaluator
+-> (5) Get evaluation_set_id -> (6) skillB adds logic for injecting data
+
+## 1. Execute add evaluation set for skillA
+It's the main entry point to start the process to create evaluator and config logics.
+
+```bash
+`SKILL.md` 添加评测集
+```
+
+## 2. Evaluation what inputs and outputs needs to be added for skillB
+
+Extract the api definition from skillA, extract:
+* input schema;
+* output schema;
+And judge if:
+* another skillB is needed to be added for  evaluation;
+* make sure the schema we need clearly;
+
+The output for this step is the description for input and output schema which evaluator needs.
+
+## 3. Build fornax data structure
+
+Based on the input and output schema, we need to build fornax data structure. 
+* Fornax evaluation_set structure;
+* including field_schema, version, description, etc;
+* generate complete valuation config data.
+
+Pay attention: There is NO real data injected at this step. We only define the evaluator.
+
+## 4. Call the script to create an evaluator
+
+We call the OpenAPI provided by Fornax:
+* create evaluation_set;
+* return evaluation_set_id;
+
+This step we complete the registion of evaluator on Fornax.
+
+## 5. Get evaluation_set_id
+
+We need to get the evaluation_set_id from the response of step 4. This id will be the unique identifier of the following data injection
+and evalution dispatcher.
+
+## 6. skillB adds logic for injecting data
+
+Inject the data collect logic into skillB:
+* collect inputs and outputs of skillB when it runs;
+* wrap the data into fornax data structure;
+* prepare to inject the data into fornax evaluation_set;
+
+Now, we create an evaluator and it's binded to the skill workflow.
+
+The data obtain workflow:
+(1) Obtain inputs and outputs of skill -> (2) execute the js script -> (3) call the fornax to inject data -> (4) execute fornax evaluator regularly
+It will collect the data when the skill actually runs, and evaluate the skill regularly.
+
+# Conclusion
+
+So what we get:
+we get a workflow which can automatially building test set and upload to fornax.
