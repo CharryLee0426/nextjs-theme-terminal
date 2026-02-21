@@ -1,0 +1,384 @@
+---
+title: "Learn OpenClaw from Zero"
+pubDate: "2026-02-20"
+description: "Learn OpenClaw from Zero"
+tag: ["openclaw", "ai", "skill"]
+---
+
+# 小白学agent，实现 OpenClaw 六大核心能力
+你好，欢迎来到这篇特别的教程。如果你和我们一样，对 OpenClaw 的设计思想着迷，并希望通过一个更小、更轻量级的项目来理解其核心理念，那么这篇文章正是为你准备的。
+
+这个项目，可以看作是 OpenClaw 的一个“精神续作”和“最小化复刻”。它并非 OpenClaw 的分支或替代品，而是一个学习和实验的沙盒。我们在这里，用最精简的代码，模拟并实现了 OpenClaw 中最引人入胜的六个能力：Canvas 渲染、长期记忆、定时任务、Gateway 代理、Tool 调用 以及 Skill 机制。
+
+这篇教程的目标读者，是有一定前端或 Node.js 基础的工程师。我们将带你：
+* 快速复刻：在最短路径内理解并亲手运行这六个能力的最小实现。
+* 理解映射：清晰地看到每个能力如何对应 OpenClaw 的宏大架构。
+* 洞察差异：实事求是地分析这个“最小实现”与 OpenClaw 工业级方案之间的取舍与差距。
+
+需要强调的是，本项目是一个 “最小化” 的复刻。它不包含 OpenClaw 强大的频道集成（如 WhatsApp/Telegram）、设备配对、企业级安全策略、ClawHub 技能注册表等重量级功能。我们的目标是学习其“神”，而非简单复刻其“形”。
+
+准备好了吗？让我们从把项目跑起来开始。
+
+## 运行与测试
+在深入代码之前，我们先确保项目能在你的本地环境中顺利运行。
+
+### 环境准备
+Node.js: 版本需 `>= 22`。
+包管理器: 推荐使用 pnpm。
+
+### 启动项目
+本项目包含两个主要服务：Next.js 应用（提供前端界面和 API）和 定时器 WebSocket 服务。
+
+安装依赖在项目根目录 study/vercel_ai 下执行：
+pnpm install
+
+配置环境变量项目依赖一些环境变量来连接大模型服务。请在项目根目录创建一个 .env.local 文件，并填入以下内容。
+
+我们提供了两种连接模型的方式：直连或通过本地 Gateway 代理。
+
+方式一：直连 OpenAI-Compatible 服务如果你的模型服务（如 Groq, Moonshot, Zhipu AI 等）提供了与 OpenAI 兼容的 API，可以直接配置：
+
+```bash
+.env.local
+
+# 模型服务商提供的 Base URL
+OPENAI_COMPATIBLE_BASE_URL="https://api.groq.com/openai/v1"
+# 模型服务商提供的 API Key
+OPENAI_COMPATIBLE_API_KEY="gsk_..."
+# 要使用的模型名称
+OPENAI_COMPATIBLE_MODEL="llama3-8b-8192"
+```
+
+启动开发服务项目提供了一个集成的开发脚本，可以一键启动所有服务：
+pnpm dev
+  这个命令会同时启动 Next.js 应用（默认在 http://localhost:3000）和定时器 WebSocket 服务（默认在 ws://localhost:3001）。
+  你也可以分开启动它们，便于独立调试：
+
+单独启动 Next.js (Web UI + API)
+pnpm dev:next
+
+单独启动定时器服务
+pnpm dev:timer
+
+### 验证方法
+打开浏览器，访问 http://localhost:3000。
+你会看到一个极简的聊天界面。
+尝试发送一条消息，如“你好”，如果模型正常响应，说明基本链路通畅。
+现在，项目已经跑起来了。接下来，让我们逐一拆解那六个迷人的核心能力。
+
+## 1. Canvas：在聊天中渲染 Web 应用
+
+当 AI 的回答不再局限于文本，而是能够生成一个可交互、富媒体的 Web 应用时，对话体验将被彻底颠覆。这正是 OpenClaw Web 控制台和本项目 Canvas 功能的核心思想。
+
+### 最小化实现拆解
+在这个最小实现中，我们让 AI 模型根据需求，动态生成一个包含 HTML, CSS, JS 的迷你 Web 应用，并将其安全地渲染在聊天界面中。
+
+#### 1.1 从前端到后端：一次完整的 Canvas 渲染流程
+1. 用户输入：用户提出一个需要交互式界面的需求，例如“帮我做一个房贷计算器”。
+2. 模型决策：`/api/chat` 接口中的 System Prompt 会引导模型。当它判断用户需求适合用交互界面满足时，它不会输出普通文本，而是生成一个特定结构的 JSON 对象：
+
+```json
+{
+  "type": "canvas",
+  "canvas": {
+    "title": "房贷计算器",
+    "html": "\u003c!-- 计算器的 HTML 结构 --\u003e",
+    "css": "/* 计算器的样式 */",
+    "js": "// 计算器的交互逻辑",
+    "height": 420,
+    "allowNetwork": false
+  }
+}
+```
+
+前端渲染：src/app/page.tsx 的主页面在收到这个 JSON 后，会渲染一个 `<CanvasCard />` 组件，而不是纯文本。
+
+#### 1.2 CanvasCard：安全渲染的 iframe 容器
+
+CanvasCard 组件是实现 Canvas 功能的关键。它没有直接将模型生成的 HTML、CSS 和 JS 注入到主页面中（这会带来严重的安全风险），而是巧妙地利用了 `<iframe>`。
+* srcDoc 属性：buildCanvasSrcDoc 函数将模型返回的 HTML、CSS、JS 片段组装成一个完整的、自包含的 HTML 文档字符串，然后赋值给 `<iframe>` 的 srcDoc 属性。这使得 iframe 的内容完全由我们动态构建，无需托管一个单独的文件。
+代码位置: study/vercel_ai/src/app/page.tsx (函数 buildCanvasSrcDoc)
+* sandbox 属性：为了安全，`<iframe>` 被赋予了严格的 sandbox="allow-scripts allow-forms" 属性。这意味着：
+  * 脚本可以执行 (allow-scripts)。
+  * 表单可以提交 (allow-forms)。
+  * 但禁止访问 top 窗口 (防止操作父页面 DOM)、禁止读写 Cookie/LocalStorage、禁止弹出窗口等危险行为。
+* 内容安全策略 (CSP)：buildCanvasSrcDoc 函数还会动态生成一个 `<meta http-equiv="Content-Security-Policy">` 标签插入到 iframe 的 `<head>` 中。
+当 allowNetwork 为 false (默认) 时，CSP 会禁止 iframe 发起任何外部网络请求，确保其完全沙箱化。
+只有当模型明确需要访问外部资源（如第三方库、API）并设置 allowNetwork: true 时，CSP 规则才会放宽，允许连接到 https: 资源。
+
+#### 1.3 postMessage：iframe 与主页面的高度通信
+
+iframe 的内容高度是动态变化的，但主页面无法直接获知。为此，我们建立了一套基于 postMessage 的通信机制。
+
+* iframe 内部：buildCanvasSrcDoc 会自动注入一段 JS 脚本。该脚本使用 ResizeObserver 监听 document 的尺寸变化，一旦变化就通过 parent.postMessage 向父页面发送一个包含当前高度的消息。
+代码位置: study/vercel_ai/src/app/page.tsx (函数 buildCanvasSrcDoc 内的脚本)
+* 主页面：CanvasCard 组件通过 useEffect 监听 window 的 message 事件。当收到来自 iframe 的 canvas:resize 消息时，它会更新 `<iframe>` 的 height 状态，从而实现高度的自适应。为了防止内容无限拉伸，高度被 clampNumber 函数限制在一个合理的范围（例如 240px-900px）。
+
+验证方法
+* 在聊天框输入：“用 Canvas 做一个简单的加法计算器，包含两个输入框和一个结果展示区”。
+* 观察 AI 是否返回了一个 CanvasCard，其中包含一个可以正常交互和计算的计算器。
+* 尝试在计算器界面中进行计算，查看交互是否正常。
+ 
+
+## 2. 上下文与长期记忆
+
+一个聪明的 AI 助手，不仅要能理解当下的对话，还应该记住用户的偏好、目标和重要事实。OpenClaw 的持久记忆（Persistent Memory）是其核心特性之一，允许 Agent 跨会话、跨设备记住关键信息。本项目通过一个极简的本地文件系统实现了类似的功能。
+
+### 最小化实现拆解
+我们将用户的长期记忆以 JSONL (JSON Lines) 格式存储在本地文件 .data/memory.jsonl 中，每一行代表一条记忆。
+
+#### 2.1 memoryStore.ts：本地记忆的存储与检索
+src/server/memoryStore.ts 是我们记忆系统的核心。
+* 数据结构：每条记忆 (MemoryItem) 是一个包含 id, text, tags, createdAt, updatedAt 的对象。
+* 持久化：
+addMemory 函数负责写入新记忆。它会先检查文本是否与现有记忆重复，如果重复则只更新时间戳。为了安全，它还会过滤掉包含 API_KEY, token 等关键词的敏感信息。新记忆通过 fs.appendFile 追加到 memory.jsonl 文件末尾，简单高效。
+代码位置: study/vercel_ai/src/server/memoryStore.ts (函数 addMemory)
+* 检索策略：
+searchMemories 是检索的核心。它采用了一种简单的“关键词匹配 + 时间衰减”的混合评分机制。
+首先，tokenize 函数将查询语句（即用户的最新输入）拆分成词元。
+然后，遍历所有记忆条目，根据匹配到的词元数量给予基础分，再根据记忆的“新鲜度”（updatedAt 距今的时间）给予一个衰减分。
+最后，返回得分最高的几条记忆。
+代码位置: study/vercel_ai/src/server/memoryStore.ts (函数 searchMemories)
+#### 2.2 /api/chat：记忆的注入与提取
+聊天 API 是记忆功能发挥作用的主战场。
+* 记忆注入：
+在处理用户请求的开始，API 会调用 searchMemories，用用户的最新输入去检索相关的记忆。
+如果找到了相关记忆，buildMemoryContextPrompt 函数会将它们格式化成一段特定的 System Prompt，例如：
+已知用户长期记忆（可被更新；如冲突请向用户确认）：
+\- 我的常用编程语言是 TypeScript。
+\- 我正在学习 Rust 语言。
+这段 prompt 会被前置到发送给大模型的 messages 数组中，为模型提供关于用户的背景知识。
+代码位置: study/vercel_ai/src/app/api/chat/route.ts (行 547, 812-816)
+* 记忆自动提取：
+在处理完用户请求并准备返回响应之前，API 会调用 autoRememberFromUserText 函数。
+这个函数会发起一个独立的大模型调用，其任务是扮演“长期记忆提取器”，从用户本轮的输入中判断是否有值得记住的信息（如偏好、目标、事实）。
+如果提取到信息，模型会返回一个 JSON 数组 `{"memories": [{"text": "..."}]}`，API 解析后调用 addMemory 将其存入我们的 .jsonl 文件中。
+代码位置: study/vercel_ai/src/app/api/chat/route.ts (函数 autoRememberFromUserText, 行 830, 839, 846)
+* 显式工具调用：
+除了自动提取，我们还提供了 memory_search 和 memory_add 两个 tool，允许模型在对话中根据需要，主动查询或写入记忆。
+
+#### OpenClaw 对应关系与迁移建议
+OpenClaw 对应概念
+本项目的记忆系统直接映射了 OpenClaw 的 持久记忆（Persistent Memory） 理念。OpenClaw 的核心价值之一就是它的记忆不会随着一次对话结束而消失，它是一个能与用户共同成长的助手。
+与本项目的差异与取舍
+存储后端：OpenClaw 支持多种存储后端（如本地文件、矢量数据库），架构更复杂，能处理海量记忆并进行高效的语义检索。本项目为了简化，选择了最直接的 JSONL 文件 方案，易于理解和调试，但在性能和检索精度上无法与专业数据库相比。
+上下文范围：OpenClaw 的记忆是跨 Agent、跨 Channel（通道）的，意味着你在 Telegram 上告诉它的事，它在 Slack 里也能记住。本项目的记忆只在当前这个单一的服务内有效，是单体、单用户的。
+检索方式：OpenClaw 通常会结合使用关键词检索和更高级的矢量嵌入（Vector Embedding） 进行语义相似度搜索，检索效果更精准。本项目的 searchMemories 只是一个基于词频和时间衰减的简单模拟。
+
+### 验证方法
+ 
+写入记忆：
+与 AI 对话：“请记住，我最喜欢的框架是 Next.js”。
+检查项目根目录下的 .data/memory.jsonl 文件，看是否增加了一行包含 "我最喜欢的框架是 Next.js" 的 JSON 记录。
+检索与应用记忆：
+开启一个新的聊天会话（刷新页面）。
+提问：“我最喜欢的框架是什么？”
+观察 AI 是否能正确回答“Next.js”。这证明它成功从 .jsonl 文件中检索到了相关记忆，并将其注入到了上下文中。
+自动提取记忆：
+在 .data/memory.jsonl 文件为空的情况下，与 AI 对话：“我的工作是前端开发，我住在上海。”
+对话结束后，检查 .data/memory.jsonl 文件，观察 AI 是否自动提取并存入了“工作是前端开发”或“住在上海”这类关键信息。
+
+## 3. 定时任务：让 AI 拥有“时间感”
+
+一个“能做事”的 AI，除了响应用户的即时指令，还应该能在指定时间或按固定周期执行任务，例如“半小时后提醒我开会”或“每天早上 9 点推送天气预报”。这正是 OpenClaw 的 cron 后台任务系统所解决的问题。本项目通过 Node.js 的定时器和 WebSocket 实现了一个最小化的版本。
+最小化实现拆解
+整个系统由三部分组成：一个进程内的调度器、一个WebSocket 服务用于通信，以及一个与大模型交互的Tool。
+### 3.1 timerScheduler.ts：内存中的任务调度中心
+这是定时任务的“大脑”，一个纯粹的、无 I/O 的内存调度器。
+* 核心逻辑：createTimerScheduler 函数返回一个包含 createTimer, cancelTimer, listTimers 等方法的对象。它内部使用 Map 结构来存储所有定时器，key 是定时器 ID，value 是包含任务信息和 Node.js 定时器句柄 (setTimeout 或 setInterval 的返回值) 的对象。
+* 事件模型：调度器本身不执行复杂的逻辑，而是通过一个事件系统 (onEvent) 对外广播状态变化。当一个定时器被创建、触发或取消时，它会向所有订阅者 emit 一个事件（如 timer.created, timer.fired）。这种设计使得调度器和外部通信（如 WebSocket）解耦。
+* 时间安全：所有与时间相关的计算，如 delay，都使用了 clampMin 函数确保其不小于 0，避免 setTimeout 出现非预期的立即执行行为。
+代码位置: study/vercel_ai/src/server/timerScheduler.ts
+### 3.2 timerWsServer.ts：连接调度器与外部世界的桥梁
+这个 WebSocket 服务将内存中的调度器暴露出去，让外部（比如我们的前端页面）可以与之通信。
+* 服务启动：startTimerWsServer 函数会创建一个 http 服务器，并挂载一个 WebSocketServer (来自 ws 库) 到特定路径（/ws）。
+* 消息路由：
+当一个新客户端连接时，服务器会立即将当前的定时器列表发送给它。
+它监听调度器的所有事件，并将这些事件封装成 JSON 消息，广播给所有连接的客户端。这就是前端能收到“提醒”的关键。
+它接收来自客户端的指令（如 timer.create），解析后调用 scheduler 的相应方法来执行。
+* 安全考量：isOriginAllowed 函数会检查 WebSocket 连接的 Origin 请求头，只有在允许列表（TIMER_WS_ALLOWED_ORIGINS 环境变量）中的源才能成功连接，这是一个基础的安全防护。
+代码位置: study/vercel_ai/src/server/timerWsServer.ts
+### 3.3 /api/chat 与前端：创建任务与接收推送
+* 创建任务 (Tool)：
+/api/chat 接口定义了 timer_create, timer_cancel, timer_list 三个 tool。当用户说“提醒我...”时，模型会调用 timer_create tool。
+executeTimerAction 是一个关键函数。它不像前端页面那样与 WebSocket 建立长连接，而是执行一次“请求-响应”式的短连接：
+生成一个唯一的 __requestId。
+连接 WebSocket 服务。
+发送创建指令，并将 __requestId 附加到任务数据中。
+监听 timer.created 事件，直到收到一个包含相同 __requestId 的事件，才认为任务创建成功。
+关闭连接，将结果返回给模型。
+代码位置: study/vercel_ai/src/app/api/chat/route.ts (函数 executeTimerAction)
+* 接收推送 (前端)：
+src/app/page.tsx 中有一个 useEffect，它会与 WebSocket 服务建立一个长连接。
+当 timerWsServer 广播 timer.fired 事件，并且任务类型是 notify 时，前端会解析出消息内容，并将其作为一个新的“助手”消息追加到聊天列表中，从而在 UI 上实现了“推送提醒”。
+代码位置: study/vercel_ai/src/app/page.tsx (行 219-260)
+#### 验证方法
+* 创建定时器：
+在聊天框输入：“10秒后提醒我喝水”。
+观察 AI 的回复，它应该会返回类似“已创建一次性定时器：喝水...”的确认信息。
+* 接收推送：
+等待大约 10 秒。
+观察聊天界面，应该会自动出现一条新的、来自模型的消息：“喝水”。
+查看定时器：
+在聊天框输入：“列出所有定时器”。
+在创建了定时器但还未触发时执行此操作，AI 应回复类似“当前定时器数量：1”的信息。在任务触发后执行，应回复数量为 0。
+ 
+
+## 4. Gateway 代理：统一模型访问入口
+
+在复杂的 AI 应用中，我们可能需要与多个不同的模型服务商打交道，或者在访问模型前进行统一的日志记录、缓存、权限控制。OpenClaw 的 Gateway 架构正是为此而生，它是一个中心化的流量入口。本项目实现了一个极简的透明代理，来模拟 Gateway 的核心思想。
+
+### 最小化实现拆解
+我们的 Gateway 是一个 Next.js 的动态 API 路由，它将所有发往 /api/gateway/... 的请求，原封不动地转发到配置的上游模型服务商。
+
+#### 4.1 /api/gateway/[...path]/route.ts：透明代理的核心
+这个文件是 Gateway 的全部实现，非常精简。
+* 动态路由捕获：文件名 [...path] 是 Next.js 的“全捕获”动态路由语法，意味着它可以匹配 /api/gateway/v1/chat/completions 等任意深度的路径。
+* 上游 URL 构建：
+buildUpstreamUrl 函数负责构造要转发到的目标 URL。
+它从环境变量 AI_GATEWAY_BASE_URL 读取上游的基础路径（例如 https://api.openai.com）。
+然后，它将客户端请求的路径部分（`...path`）和查询参数（`?query=...`）追加到基础路径后面，形成一个完整的上游 URL。
+代码位置: study/vercel_ai/src/app/api/gateway/[...path]/route.ts (函数 buildUpstreamUrl)
+* 请求头清洗与注入：
+buildUpstreamHeaders 函数对请求头进行处理。
+它会“清洗”掉一些特定于当前连接的头，如 `host`、`connection`，因为这些头对于上游服务器没有意义。
+最关键的一步是注入授权头。它会从环境变量 AI_GATEWAY_API_KEY 读取真正的上游 API Key，并将其设置为 `Authorization: Bearer <API_KEY>`，覆盖或添加这个头到转发的请求中。
+代码位置: study/vercel_ai/src/app/api/gateway/[...path]/route.ts (函数 buildUpstreamHeaders)
+* 请求转发：
+proxy 函数使用原生的 fetch API，将处理过的 URL、请求头、方法和请求体，直接发送给上游服务器，并将上游的响应流式返回给客户端。
+#### 4.2 /api/chat：Gateway 的使用者
+聊天 API (/api/chat/route.ts) 是这个 Gateway 的主要“客户”。
+* getOpenAICompatibleConfig 函数中包含一个决策逻辑：
+它首先检查是否配置了直连模型服务的环境变量（OPENAI_COMPATIBLE_BASE_URL）。
+如果没有，它就会切换到 Gateway 模式。
+在 Gateway 模式下，它会将 createOpenAICompatible (Vercel AI SDK 的配置函数) 的 baseURL 参数设置为我们自己的本地代理地址：`${origin}/api/gateway`。
+同时，它会使用一个“伪” API Key (LOCAL_GATEWAY_API_KEY)，这个 Key 仅用于我们内部，并不会被转发到上游。
+这样一来，所有从聊天 API 发出的模型请求，都会被透明地路由到我们的 Gateway，再由 Gateway 统一处理后发往真正的模型服务商。
+代码位置: study/vercel_ai/src/app/api/chat/route.ts (函数 getOpenAICompatibleConfig)
+
+### OpenClaw 对应关系与迁移建议
+#### OpenClaw 对应概念
+本项目的 Gateway 直接映射了 OpenClaw 的核心组件——Gateway。在 OpenClaw 中，Gateway 是所有交互的中心枢纽，它连接着各种 Channel（如 Telegram）、Skill 和底层的 AI 模型，并负责会话管理、记忆存储、安全认证等。
+#### 与本项目的差异与取舍
+功能复杂度：OpenClaw 的 Gateway 是一个功能极其丰富的有状态服务。它包含：
+* 多通道入口 (Multi-channel)：能同时处理来自 WhatsApp、Discord 等多个平台的消息。
+* 控制 UI (Control UI)：提供一个 Web 界面来管理和监控 Agent。
+* 设备配对与安全：实现复杂的设备认证和安全策略。
+* 会话与记忆管理：负责持久化对话历史和用户记忆。本项目实现的 Gateway 则是一个极简的、无状态的透明代理。它的唯一职责就是转发请求和注入密钥，没有自己的状态，也没有复杂的管理功能。
+实现方式：OpenClaw 的 Gateway 是一个独立的、长时运行的 Node.js 进程。我们的 Gateway 则是利用 Next.js 的 Serverless API Route 实现的，生命周期更短，更轻量。
+和设备配对机制来确保安全。例如，可以为不同的模型上游配置不同的访问策略，并通过安全的 Secret Management 系统来管理密钥。
+
+## 5. Tool 定义与使用：赋予模型“行动”的能力
+
+如果说记忆给了模型“大脑”，那么 Tool 就给了模型“双手”。它允许我们将服务端的能力（如发送邮件、查询数据库、执行代码）以一种结构化的方式暴露给大模型，让模型可以在对话中决定何时、如何调用这些能力。Vercel AI SDK 提供了强大的 tool 功能，本项目充分利用了它。
+
+### 最小化实现拆解
+在 /api/chat/route.ts 中，我们定义了一系列 tool，涵盖了定时任务、技能和记忆等多个方面。
+
+#### 5.1 ai.tool：定义一个工具
+Vercel AI SDK 的 tool 函数是定义工具的核心。一个典型的工具定义包含三部分：
+* description (描述)：这是最重要的部分。你需要用清晰、准确的自然语言描述这个工具能做什么、何时应该使用。模型会根据这个描述来决定是否调用该工具。例如 skill_list 的描述是“列出当前可用 skills（来自本地 src/skills 目录）。”
+* inputSchema (输入模式)：使用 jsonSchema 定义工具需要接收的参数。这不仅是文档，更是运行时校验。AI SDK 会确保模型生成的参数严格符合你定义的 schema。
+精细校验：除了基本的类型定义，我们还可以在 jsonSchema 的第二个参数中传入一个自定义 validate 函数，实现复杂的业务逻辑校验。例如，timer_create 的校验函数会检查 mode 是否为 once 或 interval，并根据 mode 校验 runAt 或 everyMs 是否存在且合法。这大大增强了工具的健壮性。
+代码位置: study/vercel_ai/src/app/api/chat/route.ts (例如 timer_create 的 validate 函数)
+* execute (执行函数)：这是一个 async 函数，负责执行工具的实际逻辑。它接收经过 inputSchema 校验和解析后的参数。例如，skill_list.execute 会调用 listSkills() 函数并返回结果。
+#### 5.2 generateText：调用工具的魔法
+当我们调用 Vercel AI SDK 的 generateText 函数时，只需将我们定义好的 tools 对象传入。SDK 会在底层完成所有神奇的工作：
+1. 工具描述转换：它会将所有 tool 的 description 和 inputSchema 转换为大模型（如 OpenAI, Gemini）能理解的 tools 或 function_calling 格式。
+2. 模型决策：模型在分析用户输入后，如果认为需要调用某个工具，它不会直接返回文本，而是返回一个特殊的“工具调用”请求。
+3. 自动执行与结果返回：AI SDK 会自动捕获这个请求，调用你定义的相应 execute 函数，并将函数的返回值再发送给模型。
+4. 最终响应：模型拿到工具执行结果后，会基于这个结果生成最终的自然语言回复。
+整个过程对开发者来说是透明的，我们只需定义好工具，剩下的交给 AI SDK。
+#### 5.3 示例：三个核心工具的剖析
+* timer_create:
+用途: 创建一个定时任务。
+参数: 一个复杂的对象，包含 mode ('once'/'interval'), task (任务详情) 等。它的 inputSchema 和 validate 函数是参数校验的绝佳范例。
+返回: 调用 executeTimerAction 后返回一个包含成功与否和描述文本的对象，例如 `{ ok: true, text: "已创建..." }`。
+* skill_list:
+用途: 列出所有可用的本地技能。
+参数: 无参数 (`{}`)。
+返回: 一个包含技能列表的对象，例如 `{ skills: [{ name: 'calc', description: '...' }] }`。
+* memory_search:
+用途: 根据关键词搜索长期记忆。
+参数: `{ query: string, limit?: number }`。
+返回: 一个包含记忆条目数组的对象，例如 `{"memories": [{"id": '...', "text": '...'}]}`。
+
+### OpenClaw 对应关系与迁移建议
+* OpenClaw 对应概念
+本项目的 Tool 机制直接映射了 OpenClaw 中 “技能/工具”（Skills/Tools） 的调用理念。在 OpenClaw 中，几乎所有的“行动”都是通过调用一个 Skill 来完成的。Skill 是 OpenClaw 能力扩展的核心单元。
+* 与本项目的差异与取舍
+定义与执行的分离：在 OpenClaw 中，Skill 的定义（SKILL.md）和执行是高度分离的。SKILL.md 仅供模型“阅读理解”，而执行逻辑则在独立的脚本中。本项目的 Tool 定义 (description, inputSchema, execute) 是聚合在一起的，更符合传统编程的函数定义模式，对于小型项目更直观。
+生态系统：OpenClaw 拥有一个庞大的 Skill 生态 和一个公共注册表 ClawHub。用户可以通过命令行 openclaw skills install ... 来安装社区贡献的数千个技能。本项目的 Tool 是在代码中硬编码的，不具备动态扩展的能力。
+执行环境：OpenClaw 的 Skill 通常在受控的沙箱环境（甚至是独立的 Docker 容器）中执行，以确保安全。本项目的 Tool 的 execute 函数直接在 /api/chat 的 Node.js 进程中执行，虽然简单，但隔离性较差。
+* 迁移到 OpenClaw 的注意点
+1. 将 Tool 封装为 Skill：要将本项目的能力迁移到 OpenClaw，你需要将每一个 Tool 都封装成一个独立的 Skill 目录。
+2. 将 Tool 的 description 和 inputSchema 的核心内容，翻译成自然语言，写入 SKILL.md。
+3. 将 Tool 的 execute 函数的逻辑，放入 run.mjs 或其他入口脚本中。
+4. 处理依赖：在 OpenClaw 中，如果一个 Skill 需要调用另一个 Skill（例如，一个 morning_brief Skill 需要调用 weather Skill 和 calendar Skill），这通常通过 Agent 的自然语言指令链来完成，而不是像本项目一样通过函数直接调用。
+5. 接入 ClawHub：一旦你将工具封装成符合 OpenClaw 规范的 Skill，就可以将其发布到 ClawHub，让整个社区都能发现和使用你的贡献。
+
+### 验证方法
+ 
+与 AI 对话，触发工具调用：
+“帮我创建一个15秒后提醒我‘该站起来了’的定时器”
+“列出你会的 skill”
+“帮我查一下关于 Next.js 的记忆”
+观察模型响应：模型应该能够理解你的意图，并回复它调用了某个工具以及该工具的执行结果。例如，在创建定时器后，它会回复“已创建一次性定时器...”。
+检查后端日志：在 pnpm dev 的终端日志中，你可以观察到 Vercel AI SDK 的详细日志，其中会清晰地展示模型决定调用哪个工具、传入了什么参数、工具返回了什么结果，以及模型最终生成的回复。这是调试 Tool 功能最有效的方法。
+
+## 6. Skill 机制：可插拔的动态能力
+
+如果说 Tool 是将服务端能力暴露给模型的“接口”，那么 Skill 机制就是一种让这些“接口”变得可动态加载、安全隔离、易于管理的架构模式。这是 OpenClaw 设计思想的精髓所在。本项目模仿其理念，实现了一套基于子进程的本地 Skill 系统。
+
+### 最小化实现拆解
+在这个实现中，每个 Skill 都是一个独立的文件夹，包含定义、文档和执行逻辑。系统可以在运行时动态地发现、加载和执行这些 Skill。
+
+#### 6.1 Skill 的标准结构
+每个 Skill 都存放在 src/skills 目录下，并遵循一个简单的约定：
+skill.json (清单文件)：定义了 Skill 的元数据。
+name: Skill 的唯一标识符。
+description: 一段自然语言描述，供模型理解其功能。
+entry: Skill 的入口脚本文件，例如 run.mjs。如果省略，则该 Skill 只有文档，不能被执行。
+SKILL.md (文档)：一份 Markdown 文件，详细说明 Skill 的用途、输入参数、输出结构和使用示例。这是模型“学习”如何使用 Skill 的主要材料。
+run.mjs (执行脚本)：一个标准的 Node.js 模块，导出一个名为 run 的异步函数。这个函数接收 Skill 的输入，并返回执行结果。
+
+#### 6.2 skillLoader.ts：加载与执行的核心
+src/server/skillLoader.ts 负责管理所有 Skill。
+* 发现与列出 (listSkills)：它会扫描 src/skills 目录下的所有子文件夹，读取它们的 skill.json，从而构建一个可用的 Skill 列表。
+* 加载文档 (loadSkillMarkdownByName)：当模型需要了解一个 Skill 的细节时，这个函数会读取并返回对应 Skill 的 SKILL.md 内容。
+* 执行 (runSkillByName)：这是最关键的部分。它不是直接在当前进程中 import 并执行 Skill 的 run.mjs，而是通过 runEntryInSubprocess 函数，在一个全新的 Node.js 子进程中执行它。
+
+#### 6.3 子进程隔离：安全执行任意代码
+runEntryInSubprocess 是我们实现安全隔离的核心。
+1. 启动子进程：它使用 child_process.spawn 启动一个新的 Node.js 实例，并运行一个“引导”脚本 src/server/skillRunner.mjs。Skill 的实际路径作为参数传给这个引导脚本。
+标准输入/输出 (stdio) 协议：
+输入：Skill 需要的参数被 JSON.stringify 后，通过子进程的 stdin（标准输入）写入。
+输出：子进程中的 skillRunner.mjs 脚本会 import 并执行真正的 Skill 代码。Skill 的 run 函数返回的结果被 JSON.stringify 后，通过 stdout（标准输出）返回给主进程。
+错误：如果 Skill 执行出错，错误信息会通过 stderr（标准错误）或一个包含 error 字段的 JSON 返回。
+2. 主进程处理：主进程等待子进程退出，然后解析其 stdout 获取结果，或从 stderr 获取错误信息。
+这种设计的最大好处是安全。每个 Skill 都在一个独立的、受限的环境中运行，它无法访问主进程的内存、变量或资源，极大地降低了执行不可信代码的风险。
+
+#### 6.4 示例技能
+本项目内置了三个示例 Skill 来展示其能力：
+calc: 一个安全的四则运算表达式计算器。它展示了如何处理复杂的计算逻辑。
+echo: 一个简单的回显工具，将输入原样返回。它主要用于调试，验证整个 Skill 调用链路是否通畅。
+http_get: 一个受限的 HTTP GET 工具，可以获取指定 URL 的文本预览。它展示了如何执行网络请求等 I/O 操作。
+
+### OpenClaw 对应关系与迁移建议
+OpenClaw 对应概念
+本项目的 Skill 机制是 OpenClaw Skills 生态系统 的一个微缩模型。OpenClaw 的强大之处很大程度上来源于其庞大且不断增长的社区技能库。
+与本项目的差异与取舍
+1. 注册与发现：OpenClaw 有一个名为 ClawHub 的公共技能注册表，以及一个命令行工具 openclaw skills install。用户可以像使用 npm 一样轻松地发现和安装来自全球开发者的技能。本项目则简化为扫描一个本地的 src/skills 文件夹，所有技能都是内置的。
+2. 执行环境与沙箱：OpenClaw 对 Skill 的执行环境有更严格的控制，可能会使用 Docker 容器、WebAssembly (Wasm) 或其他沙箱技术来提供更强的隔离保证。本项目的子进程隔离是一种轻量级的沙箱方案，有效但不如容器级隔离彻底。
+3. 依赖管理：OpenClaw 的 Skill 可以有自己的 package.json 来声明依赖。在安装 Skill 时，OpenClaw 会处理这些依赖。本项目的 Skill 共享主项目的 node_modules，无法独立管理依赖。
+
+### 验证方法
+ 
+列出技能：
+在聊天框输入：“列出你会的所有 skill”。
+AI 应该会调用 skill_list 工具，并返回 calc, echo, http_get 三个技能的列表和描述。
+运行技能：
+“用 skill 计算 10 * (5 + 3)” 或直接输入“10 * (5 + 3)”（触发自动执行）。AI 应该调用 calc 技能并返回结果 80。
+“用 http_get skill 访问 antd.design”。AI 应该会返回 Ant Design 官网首页的文本预览。
+检查子进程：
+在运行 runSkillByName 时，你可以使用系统工具（如 ps aux | grep node）观察到，确实有一个新的 Node.js 进程被短暂地创建和销毁。这证明了子进程隔离机制在工作。
