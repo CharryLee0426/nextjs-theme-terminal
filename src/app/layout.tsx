@@ -1,10 +1,12 @@
 import type { Metadata } from 'next'
+import type { ReactNode } from 'react'
 import { Inter } from 'next/font/google'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import './globals.css'
 import 'katex/dist/katex.min.css'
-import { ConvexClientProvider } from './ConvexClientProvider'
+import { ConvexAuthNextjsServerProvider } from '@convex-dev/auth/nextjs/server'
+import { AppConvexProviders } from '@/components/AppConvexProviders'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -32,23 +34,25 @@ export const metadata: Metadata = {
   },
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
-  children: React.ReactNode
+  children: ReactNode
 }) {
   return (
     <html lang="en">
       <body className={inter.className}>
-        <ConvexClientProvider>
-          <div className="container center">
-            <Header />
-            <main className="content">
-              {children}
-            </main>
-            <Footer />
-          </div>
-        </ConvexClientProvider>
+        <ConvexAuthNextjsServerProvider>
+          <AppConvexProviders>
+            <div className="container center">
+              <Header />
+              <main className="content">
+                {children}
+              </main>
+              <Footer />
+            </div>
+          </AppConvexProviders>
+        </ConvexAuthNextjsServerProvider>
       </body>
     </html>
   )

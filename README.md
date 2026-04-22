@@ -2,6 +2,8 @@
 
 A modern, retro terminal-inspired blog theme built with Next.js 15, featuring MDX support and a sleek command-line aesthetic. This project brings the beloved Hugo Terminal theme experience to the React ecosystem with enhanced functionality and modern web development practices.
 
+**中文说明：** [README.cn.md](./README.cn.md)
+
 ![Terminal Theme Preview](./public/terminal-preview.svg)
 
 ## ✨ Features
@@ -175,6 +177,78 @@ The theme uses CSS custom properties for easy customization. Edit `src/app/globa
 - **Footer**: Edit `src/components/Footer.tsx`
 - **Global Layout**: Edit `src/app/layout.tsx`
 
+## Convex Auth and JWT keys (dev and production)
+
+This project uses **[Convex](https://www.convex.dev/)** with **[@convex-dev/auth](https://labs.convex.dev/auth)** (password provider). After a successful sign-in, Convex issues **session JWTs** signed with **RS256**. That requires a key pair stored as **Convex deployment environment variables**—not only in Vercel or `.env.local`.
+
+### Required Convex variables
+
+| Variable | Purpose |
+|----------|---------|
+| `JWT_PRIVATE_KEY` | PKCS #8 PEM **private** key used to **sign** JWTs (keep secret). |
+| `JWKS` | JSON Web Key Set containing the **public** key material used to **verify** tokens. |
+
+If `JWT_PRIVATE_KEY` is missing, sign-in fails with an error like `Missing environment variable JWT_PRIVATE_KEY`.
+
+**Do not** try to set `CONVEX_SITE_URL` yourself on Convex Cloud: it is a **built-in** deployment value (your `*.convex.site` URL). The issuer claim in JWTs comes from there.
+
+Official reference: [Convex Auth — manual setup](https://labs.convex.dev/auth/setup/manual).
+
+### Local development
+
+1. Link the repo to a Convex project (`npx convex dev` once).
+2. Generate a key pair and push it to the **currently linked** deployment (from `.env.local` / `CONVEX_DEPLOYMENT`):
+
+   ```bash
+   npm run convex:apply-auth-keys
+   ```
+
+   This runs `scripts/generate-convex-auth-keys.mjs --apply`, which sets `JWT_PRIVATE_KEY` and `JWKS` via `npx convex env set … --from-file` (PEM/JSON values must not be passed as a single shell argument with spaces).
+
+3. To **print** values instead (e.g. to paste into the Dashboard), run:
+
+   ```bash
+   npm run convex:generate-auth-keys
+   ```
+
+4. Restart `npx convex dev` after changing Convex env vars.
+
+### Production deployment
+
+Convex **dev** and **prod** are separate deployments. You must configure **`JWT_PRIVATE_KEY` and `JWKS` on the production deployment** as well—copying dev keys is possible but **rotating** or using a **dedicated prod key pair** is recommended.
+
+**Option A — Convex Dashboard (simplest)**
+
+1. Open [Convex Dashboard](https://dashboard.convex.dev) → your project → select the **Production** deployment.
+2. Go to **Settings → Environment variables**.
+3. Run `npm run convex:generate-auth-keys` locally, then add:
+   - `JWT_PRIVATE_KEY` — the full one-line or PEM value printed for the private key (Dashboard accepts multiline PEM).
+   - `JWKS` — the exact JSON string printed for `JWKS=`.
+
+**Option B — Convex CLI targeting production**
+
+Generate PEM and JWKS files locally (never commit them), then:
+
+```bash
+npx convex env set --prod JWT_PRIVATE_KEY --from-file ./jwt-private.pem
+npx convex env set --prod JWKS --from-file ./jwks.json
+```
+
+Use `--deployment <name>` instead of `--prod` if you use a named deployment.
+
+### Vercel (or other Next.js host)
+
+Set the **public** Convex URLs for the browser (see `.env.local` example):
+
+- `NEXT_PUBLIC_CONVEX_URL` — e.g. `https://<deployment>.convex.cloud`
+- `NEXT_PUBLIC_CONVEX_SITE_URL` — e.g. `https://<deployment>.convex.site`
+
+Production builds should use the **production** Convex URLs. JWT secrets stay on Convex only; they are **not** `NEXT_PUBLIC_*` variables.
+
+### Rotating keys
+
+Regenerating and overwriting `JWT_PRIVATE_KEY` / `JWKS` **invalidates existing sessions**; users will need to sign in again. Plan rotations accordingly.
+
 ## 🚀 Deploy to Vercel
 
 ### Quick Deploy
@@ -196,9 +270,10 @@ The theme uses CSS custom properties for easy customization. Edit `src/app/globa
    - Configure build settings (auto-detected)
    - Deploy!
 
-3. **Environment Variables** (if needed)
-   - Add any required environment variables in Vercel dashboard
-   - Redeploy if necessary
+3. **Environment variables**
+   - Add `NEXT_PUBLIC_CONVEX_URL` and `NEXT_PUBLIC_CONVEX_SITE_URL` for your **production** Convex deployment (see [Convex Auth and JWT keys](#convex-auth-and-jwt-keys-dev-and-production)).
+   - On Convex **production**, set `JWT_PRIVATE_KEY` and `JWKS` (same section).
+   - Redeploy after changing env vars.
 
 ### Build Configuration
 
