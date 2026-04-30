@@ -80,3 +80,14 @@ The Next.js App Router dynamically handles URLs for blog posts and tags.
 *   **Implementation**:
     *   **Individual Posts**: The URL parameter `slug` is used to query the file system (e.g., matching `/posts/my-first-post` to `content/posts/my-first-post.mdx`). If found, the data is passed to the `<MDXContent />` component for rendering.
     *   **Tag Filtering**: The `src/lib/posts.ts` exposes functions like `getAllTags` and `getPostsByTag`. The Tag index page aggregates all unique tags across all posts, and the individual Tag pages filter the master post list to only show posts containing that specific tag.
+
+### 4. Authentication, Convex, and password reset (Turnstile)
+
+The app uses **[Convex](https://www.convex.dev/)** with **[@convex-dev/auth](https://labs.convex.dev/auth)** for password-based accounts (sign-in, sign-up, profile updates). Session JWT signing relies on `JWT_PRIVATE_KEY` / `JWKS` on the Convex deployment (see [README.md](./README.md#convex-auth-and-jwt-keys-dev-and-production)).
+
+**Forgot password** is implemented only on the sign-in route (`src/app/sign/page.tsx`). It collects username and new password, embeds a **[Cloudflare Turnstile](https://developers.cloudflare.com/turnstile/)** widget via `@marsidev/react-turnstile` (site key: `NEXT_PUBLIC_TURNSTILE_SITE_KEY` in the Next.js environment), and calls the Convex **action** `resetPasswordWithCaptcha` in `convex/passwordReset.ts`. That action:
+
+*   Verifies the Turnstile token with Cloudflare’s **siteverify** API using `TURNSTILE_SECRET_KEY` from **Convex** environment variables (not from `.env.local`).
+*   On success, updates the password with `modifyAccountCredentials` and revokes existing sessions with `invalidateSessions` from `@convex-dev/auth/server`.
+
+Setup for both env vars and dev/prod deployments is documented in [README.md — Cloudflare Turnstile](./README.md#cloudflare-turnstile-forgot-password).

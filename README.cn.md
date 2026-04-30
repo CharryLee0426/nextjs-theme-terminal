@@ -259,6 +259,50 @@ npx convex env set --prod JWKS --from-file ./jwks.json
 
 重新生成并覆盖 `JWT_PRIVATE_KEY` / `JWKS` 会使**已有会话失效**，用户需重新登录，请提前规划。
 
+<a id="cloudflare-turnstile-forgot-password"></a>
+
+## Cloudflare Turnstile（忘记密码）
+
+登录页（`/sign`）提供 **忘记密码** 流程，通过 [Cloudflare Turnstile](https://developers.cloudflare.com/turnstile/) 做人机验证；服务端在 Convex 的 `passwordReset:resetPasswordWithCaptcha`（`convex/passwordReset.ts`）中校验 token。
+
+### 两个变量、两套环境
+
+| 变量 | 配置位置 | 作用 |
+|------|----------|------|
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Next.js（`.env.local`、Vercel 等） | 在浏览器中加载 Turnstile 组件 |
+| `TURNSTILE_SECRET_KEY` | **Convex**（各部署：dev / prod 分别设置） | 重置密码时在服务端验证 token |
+
+`.env.local` **只**给 Next.js 用，**不会**传给 Convex；`TURNSTILE_SECRET_KEY` 必须在 [Convex Dashboard](https://dashboard.convex.dev) 里对**实际连接的前端所使用**的部署设置（**Settings → Environment variables**），或用下文 CLI。若 Convex 上未配置，会报错 `Password reset is not configured.`
+
+### 在 Cloudflare 创建 Turnstile 站点
+
+1. 打开 [Cloudflare 控制台](https://dash.cloudflare.com/) → **Turnstile** → **Add widget**。  
+2. 选择与域名匹配的模式（本地开发可加入 `localhost`；生产使用你的正式域名）。  
+3. 将 **Site key** 写入 Next.js 的 `NEXT_PUBLIC_TURNSTILE_SITE_KEY`。  
+4. 将 **Secret key** 写入 Convex 的 `TURNSTILE_SECRET_KEY`（与 Site key 为同一小组件）。  
+
+生产与开发若使用不同小组件或域名，需分别配置。
+
+### 本地开发使用测试密钥
+
+快速联调可使用 Cloudflare 文档中的 [Turnstile 测试密钥](https://developers.cloudflare.com/turnstile/troubleshooting/testing/)（成对的假 site / secret，验证恒通过）。将**测试 site key** 放在 `.env.local` 的 `NEXT_PUBLIC_TURNSTILE_SITE_KEY`，将**配对的测试 secret** 设到**当前 `npx convex dev` 所链接的 Convex 开发部署**的 `TURNSTILE_SECRET_KEY`。
+
+### 用 CLI 设置 Convex 中的 Secret
+
+对当前 `npx convex dev` 所链接的部署（一般为 dev）：
+
+```bash
+npx convex env set TURNSTILE_SECRET_KEY "你的-secret"
+```
+
+生产环境：
+
+```bash
+npx convex env set --prod TURNSTILE_SECRET_KEY "你的-secret"
+```
+
+修改 Convex 环境变量后，若本机在跑 `npx convex dev`，请重启该进程。
+
 ## 🚀 部署到 Vercel
 
 ### 一键部署
@@ -286,6 +330,7 @@ npx convex env set --prod JWKS --from-file ./jwks.json
 
    - 为 **生产** Convex 部署配置 `NEXT_PUBLIC_CONVEX_URL` 与 `NEXT_PUBLIC_CONVEX_SITE_URL`（详见上文 [Convex 身份验证与 JWT](#convex-auth-and-jwt-keys-dev-and-production)）。  
    - 在 Convex **生产** 部署上设置 `JWT_PRIVATE_KEY` 与 `JWKS`（同上）。  
+   - **忘记密码**：在 Vercel 配置 `NEXT_PUBLIC_TURNSTILE_SITE_KEY`，在 Convex **生产** 部署配置 `TURNSTILE_SECRET_KEY`（详见 [Cloudflare Turnstile](#cloudflare-turnstile-forgot-password)）。  
    - 修改环境变量后重新部署。  
 
 ### 构建说明

@@ -2062,6 +2062,53 @@ a:hover {
   text-decoration: underline;
 }
 
+.auth-form__hint--row {
+  margin: -4px 0 0;
+}
+
+.auth-form__link-button {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--terminal-blue);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.auth-form__link-button:hover {
+  color: var(--terminal-green);
+}
+
+.auth-form__forgot {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-color);
+  max-width: 420px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.auth-form__forgot-title {
+  font-size: 1.1rem;
+  margin: 0 0 8px;
+}
+
+.auth-form__turnstile {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.auth-form__code {
+  font-size: 0.8em;
+  padding: 1px 4px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  background: var(--background-alt);
+}
+
 /* App toasts (auth, etc.) */
 .app-toast-region {
   position: fixed;

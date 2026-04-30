@@ -57,3 +57,21 @@ export function profileUpdateFailureUserMessage(err: unknown): string {
   }
   return "Could not update profile. Please check your details and try again.";
 }
+
+/** Forgot password (captcha + unauthenticated reset). */
+export function passwordResetFailureUserMessage(err: unknown): string {
+  const t = errorText(err);
+  if (/captcha|Captcha/i.test(t)) {
+    return "Captcha verification failed. Please try again.";
+  }
+  if (/not configured|Password reset is not/i.test(t)) {
+    return "Password reset is not available on this deployment.";
+  }
+  if (/3.?32|Username must|only contain lowercase|underscore/i.test(t)) {
+    return "Username must be 3–32 characters (lowercase letters, digits, underscore only).";
+  }
+  if (/at least 8|8 characters|Password must/i.test(t)) {
+    return "New password must be at least 8 characters.";
+  }
+  return "Could not reset password. Please try again.";
+}
