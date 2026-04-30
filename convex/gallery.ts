@@ -1,5 +1,17 @@
-import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { ConvexError, v } from "convex/values";
+import { getAuthUserId } from "@convex-dev/auth/server";
+import { mutation, query, type MutationCtx } from "./_generated/server";
+
+async function requireGalleryAdmin(ctx: MutationCtx) {
+  const userId = await getAuthUserId(ctx);
+  if (userId === null) {
+    throw new ConvexError("Not signed in.");
+  }
+  const user = await ctx.db.get(userId);
+  if (user?.role !== "admin") {
+    throw new ConvexError("Gallery posts require administrator access.");
+  }
+}
 
 export const listPosts = query({
   args: {},
@@ -29,6 +41,7 @@ export const listPosts = query({
 export const generateUploadUrl = mutation({
   args: {},
   handler: async (ctx) => {
+    await requireGalleryAdmin(ctx);
     return await ctx.storage.generateUploadUrl();
   },
 });
@@ -41,6 +54,7 @@ export const createPost = mutation({
     displayAt: v.number(),
   },
   handler: async (ctx, args) => {
+    await requireGalleryAdmin(ctx);
     const title = args.title.trim();
     const text = args.text.trim();
     if (!title) throw new Error("Title is required");

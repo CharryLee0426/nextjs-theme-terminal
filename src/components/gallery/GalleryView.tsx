@@ -18,8 +18,11 @@ import { GalleryUploadModal } from "./GalleryUploadModal";
 
 export function GalleryView() {
   const posts = useQuery(api.gallery.listPosts);
+  const viewer = useQuery(api.account.viewer);
   const likeMut = useMutation(api.gallery.like);
   const dislikeMut = useMutation(api.gallery.dislike);
+
+  const canPost = viewer != null && viewer.role === "admin";
 
   const [detailId, setDetailId] = useState<Id<"galleryPosts"> | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -46,13 +49,16 @@ export function GalleryView() {
         <h1>Gallery</h1>
         <p>
           Scroll horizontally: newest posts are on the left. Tap a card to open
-          a larger detail view. Anyone can like or dislike a post.
+          a larger detail view. Anyone can like or dislike a post. Only
+          administrators can add new posts.
         </p>
       </div>
 
       {posts.length === 0 ? (
         <p className="gallery-empty">
-          No posts yet — use the + button in the bottom-left corner to add one.
+          {canPost
+            ? "No posts yet — use the + button in the bottom-left corner to add one."
+            : "No posts yet."}
         </p>
       ) : (
         <div className="gallery-scroll-wrap">
@@ -168,17 +174,19 @@ export function GalleryView() {
         </div>
       )}
 
-      <button
-        type="button"
-        className="gallery-fab"
-        aria-label="Add post"
-        onClick={() => setUploadOpen(true)}
-      >
-        <Plus size={26} strokeWidth={2.5} />
-      </button>
+      {canPost ? (
+        <button
+          type="button"
+          className="gallery-fab"
+          aria-label="Add post"
+          onClick={() => setUploadOpen(true)}
+        >
+          <Plus size={26} strokeWidth={2.5} />
+        </button>
+      ) : null}
 
       <GalleryUploadModal
-        open={uploadOpen}
+        open={uploadOpen && canPost}
         onClose={() => setUploadOpen(false)}
       />
 
