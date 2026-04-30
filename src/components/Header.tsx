@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 import { Menu, X, Terminal } from 'lucide-react'
+import { UserNav } from '@/components/UserNav'
 
 export function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
@@ -45,8 +46,10 @@ export function Header() {
           <nav className="menu">
             <ul className="menu__inner">
               <li><Link href="/about">about</Link></li>
+              <li><Link href="/gallery">gallery</Link></li>
               <li><Link href="/posts">posts</Link></li>
               <li><Link href="/tags">tags</Link></li>
+              <li className="menu__user"><UserNav /></li>
             </ul>
           </nav>
         </div>
@@ -55,8 +58,12 @@ export function Header() {
         <nav className={`menu-mobile ${isMenuOpen ? 'menu-mobile--open' : ''}`}>
           <ul className="menu-mobile__inner">
             <li><Link href="/about" onClick={() => setIsMenuOpen(false)}>about</Link></li>
+            <li><Link href="/gallery" onClick={() => setIsMenuOpen(false)}>gallery</Link></li>
             <li><Link href="/posts" onClick={() => setIsMenuOpen(false)}>posts</Link></li>
             <li><Link href="/tags" onClick={() => setIsMenuOpen(false)}>tags</Link></li>
+            <li className="menu-mobile__user">
+              <UserNav mobile onNavigate={() => setIsMenuOpen(false)} />
+            </li>
           </ul>
         </nav>
       </div>

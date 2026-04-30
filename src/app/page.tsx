@@ -12,9 +12,14 @@ export default async function HomePage() {
           Welcome to my digital terminal! I&apos;m a passionate software developer who loves 
           building elegant solutions with modern web technologies like React, Next.js, and TypeScript.
         </p>
-        <p>
-          Here you&apos;ll find my thoughts on development, tutorials, and projects I&apos;m working on. 
-          Feel free to explore my posts below or <a href="/about">learn more about me</a>!
+        <p className="index-cta-with-gallery">
+          <span className="index-cta-with-gallery__text">
+            Here you&apos;ll find my thoughts on development, tutorials, and projects I&apos;m working on. 
+            Feel free to explore my posts below or{' '}
+            <a href="/about">learn more about me</a>
+            !
+          </span>
+          <a href="/gallery" className="index-gallery-link">gallery</a>
         </p>
         <p>
           <span className="terminal-prompt">charry@terminal:~$</span> 

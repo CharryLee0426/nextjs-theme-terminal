@@ -2,6 +2,8 @@
 
 A modern, retro terminal-inspired blog theme built with Next.js 15, featuring MDX support and a sleek command-line aesthetic. This project brings the beloved Hugo Terminal theme experience to the React ecosystem with enhanced functionality and modern web development practices.
 
+**中文说明：** [README.cn.md](./README.cn.md)
+
 ![Terminal Theme Preview](./public/terminal-preview.svg)
 
 ## ✨ Features
@@ -175,6 +177,120 @@ The theme uses CSS custom properties for easy customization. Edit `src/app/globa
 - **Footer**: Edit `src/components/Footer.tsx`
 - **Global Layout**: Edit `src/app/layout.tsx`
 
+## Convex Auth and JWT keys (dev and production)
+
+This project uses **[Convex](https://www.convex.dev/)** with **[@convex-dev/auth](https://labs.convex.dev/auth)** (password provider). After a successful sign-in, Convex issues **session JWTs** signed with **RS256**. That requires a key pair stored as **Convex deployment environment variables**—not only in Vercel or `.env.local`.
+
+### Required Convex variables
+
+| Variable | Purpose |
+|----------|---------|
+| `JWT_PRIVATE_KEY` | PKCS #8 PEM **private** key used to **sign** JWTs (keep secret). |
+| `JWKS` | JSON Web Key Set containing the **public** key material used to **verify** tokens. |
+
+If `JWT_PRIVATE_KEY` is missing, sign-in fails with an error like `Missing environment variable JWT_PRIVATE_KEY`.
+
+**Do not** try to set `CONVEX_SITE_URL` yourself on Convex Cloud: it is a **built-in** deployment value (your `*.convex.site` URL). The issuer claim in JWTs comes from there.
+
+Official reference: [Convex Auth — manual setup](https://labs.convex.dev/auth/setup/manual).
+
+### Local development
+
+1. Link the repo to a Convex project (`npx convex dev` once).
+2. Generate a key pair and push it to the **currently linked** deployment (from `.env.local` / `CONVEX_DEPLOYMENT`):
+
+   ```bash
+   npm run convex:apply-auth-keys
+   ```
+
+   This runs `scripts/generate-convex-auth-keys.mjs --apply`, which sets `JWT_PRIVATE_KEY` and `JWKS` via `npx convex env set … --from-file` (PEM/JSON values must not be passed as a single shell argument with spaces).
+
+3. To **print** values instead (e.g. to paste into the Dashboard), run:
+
+   ```bash
+   npm run convex:generate-auth-keys
+   ```
+
+4. Restart `npx convex dev` after changing Convex env vars.
+
+### Production deployment
+
+Convex **dev** and **prod** are separate deployments. You must configure **`JWT_PRIVATE_KEY` and `JWKS` on the production deployment** as well—copying dev keys is possible but **rotating** or using a **dedicated prod key pair** is recommended.
+
+**Option A — Convex Dashboard (simplest)**
+
+1. Open [Convex Dashboard](https://dashboard.convex.dev) → your project → select the **Production** deployment.
+2. Go to **Settings → Environment variables**.
+3. Run `npm run convex:generate-auth-keys` locally, then add:
+   - `JWT_PRIVATE_KEY` — the full one-line or PEM value printed for the private key (Dashboard accepts multiline PEM).
+   - `JWKS` — the exact JSON string printed for `JWKS=`.
+
+**Option B — Convex CLI targeting production**
+
+Generate PEM and JWKS files locally (never commit them), then:
+
+```bash
+npx convex env set --prod JWT_PRIVATE_KEY --from-file ./jwt-private.pem
+npx convex env set --prod JWKS --from-file ./jwks.json
+```
+
+Use `--deployment <name>` instead of `--prod` if you use a named deployment.
+
+### Vercel (or other Next.js host)
+
+Set the **public** Convex URLs for the browser (see `.env.local` example):
+
+- `NEXT_PUBLIC_CONVEX_URL` — e.g. `https://<deployment>.convex.cloud`
+- `NEXT_PUBLIC_CONVEX_SITE_URL` — e.g. `https://<deployment>.convex.site`
+
+Production builds should use the **production** Convex URLs. JWT secrets stay on Convex only; they are **not** `NEXT_PUBLIC_*` variables.
+
+### Rotating keys
+
+Regenerating and overwriting `JWT_PRIVATE_KEY` / `JWKS` **invalidates existing sessions**; users will need to sign in again. Plan rotations accordingly.
+
+## Cloudflare Turnstile (forgot password)
+
+The sign-in page (`/sign`) includes **Forgot my password**, which uses [Cloudflare Turnstile](https://developers.cloudflare.com/turnstile/) for bot protection. Server-side verification runs in the Convex action `passwordReset:resetPasswordWithCaptcha` (`convex/passwordReset.ts`).
+
+### Two variables, two systems
+
+| Variable | Configure on | Purpose |
+|----------|----------------|---------|
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Next.js (`.env.local`, Vercel, etc.) | Loads the Turnstile widget in the browser |
+| `TURNSTILE_SECRET_KEY` | **Convex** (each deployment: dev / prod) | Validates the token when resetting the password |
+
+Values in `.env.local` are **only** read by Next.js. Convex actions **do not** inherit them—you must set `TURNSTILE_SECRET_KEY` in the [Convex Dashboard](https://dashboard.convex.dev) (**Settings → Environment variables**) for the deployment your app uses, or via CLI (below). If the secret is missing on Convex, password reset fails with `Password reset is not configured.`
+
+### Create a Turnstile site
+
+1. In [Cloudflare Dashboard](https://dash.cloudflare.com/) → **Turnstile** → **Add widget**.
+2. Pick a mode that matches your hosts (e.g. **Managed**; add `localhost` for local dev, or your production domain).
+3. Copy the **Site key** into `NEXT_PUBLIC_TURNSTILE_SITE_KEY` (Next.js).
+4. Copy the **Secret key** into Convex as `TURNSTILE_SECRET_KEY` (same widget as the site key).
+
+Repeat for production if you use separate widgets or hostnames.
+
+### Local development with Cloudflare test keys
+
+For quick local testing without a real hostname, use Cloudflare’s [Turnstile testing keys](https://developers.cloudflare.com/turnstile/troubleshooting/testing/) (dummy site + secret that always pass). Put the **dummy site key** in `.env.local` as `NEXT_PUBLIC_TURNSTILE_SITE_KEY` and the matching **dummy secret** in your **linked Convex dev deployment** as `TURNSTILE_SECRET_KEY`.
+
+### Set the Convex secret from the CLI
+
+Against the deployment currently linked by `npx convex dev` (dev):
+
+```bash
+npx convex env set TURNSTILE_SECRET_KEY "your-secret-key"
+```
+
+Production:
+
+```bash
+npx convex env set --prod TURNSTILE_SECRET_KEY "your-secret-key"
+```
+
+After changing Convex env vars, restart `npx convex dev` if it is running.
+
 ## 🚀 Deploy to Vercel
 
 ### Quick Deploy
@@ -196,9 +312,11 @@ The theme uses CSS custom properties for easy customization. Edit `src/app/globa
    - Configure build settings (auto-detected)
    - Deploy!
 
-3. **Environment Variables** (if needed)
-   - Add any required environment variables in Vercel dashboard
-   - Redeploy if necessary
+3. **Environment variables**
+   - Add `NEXT_PUBLIC_CONVEX_URL` and `NEXT_PUBLIC_CONVEX_SITE_URL` for your **production** Convex deployment (see [Convex Auth and JWT keys](#convex-auth-and-jwt-keys-dev-and-production)).
+   - On Convex **production**, set `JWT_PRIVATE_KEY` and `JWKS` (same section).
+   - For **forgot password**, add `NEXT_PUBLIC_TURNSTILE_SITE_KEY` on Vercel and `TURNSTILE_SECRET_KEY` on Convex **production** (see [Cloudflare Turnstile](#cloudflare-turnstile-forgot-password)).
+   - Redeploy after changing env vars.
 
 ### Build Configuration
 
