@@ -8,6 +8,8 @@ import 'katex/dist/katex.min.css'
 import { ConvexAuthNextjsServerProvider } from '@convex-dev/auth/nextjs/server'
 import { AppConvexProviders } from '@/components/AppConvexProviders'
 import { SpeedInsights } from "@vercel/speed-insights/next"
+import { Analytics } from '@vercel/analytics/next'
+
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -49,6 +51,8 @@ export default async function RootLayout({
               <Header />
               <main className="content">
                 {children}
+                <SpeedInsights />
+                <Analytics />
               </main>
               <Footer />
             </div>
