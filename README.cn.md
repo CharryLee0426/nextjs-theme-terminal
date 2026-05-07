@@ -16,6 +16,9 @@
 - 🔍 **SEO** — 合理的 meta 与结构化内容
 - 🌙 **终端配色变量** — 灵感来自经典终端模拟器
 - 🚀 **现代技术栈** — TypeScript、Tailwind CSS 等
+- 🧪 **单元测试** — [Jest](https://jestjs.io/) + [Testing Library](https://testing-library.com/)，覆盖率与 Markdown 报告（见 [测试](#测试)）
+
+更完整的技术说明见 [TECH.md](./TECH.md)。
 
 ## 🏗️ 项目结构
 
@@ -46,6 +49,15 @@ terminal-theme-nextjs/
 │   └── lib/                   # 工具与类型
 │       ├── posts.ts           # 文章读取等
 │       └── types.ts           # TypeScript 类型
+├── .github/
+│   ├── workflows/jest-pr.yml  # GitHub Actions：面向 main 的 PR 跑 Jest + 覆盖率
+│   └── scripts/run-jest-for-pr.sh  # CI：按 PR diff 跑关联测试（或整仓套件）
+├── tests/                     # 单元测试（*.test.ts / *.test.tsx）
+├── test_reports/              # Jest 生成的报告（已 gitignore）
+├── jest.config.js             # Jest 配置（next/jest）
+├── jest.setup.ts              # Jest + Testing Library
+├── jest.env.js                # 测试环境（如日期 TZ）
+├── jest.markdownReporter.cjs  # 自定义 Markdown + 覆盖率汇总
 ├── mdx-components.tsx         # 全局 MDX 组件映射
 ├── next.config.ts             # Next.js 配置
 └── package.json               # 依赖与脚本
@@ -117,6 +129,37 @@ terminal-theme-nextjs/
    ```
 
 4. **在浏览器中打开** [http://localhost:3000](http://localhost:3000)
+
+<a id="测试"></a>
+
+## 🧪 测试
+
+单元测试使用 **[Jest](https://jestjs.io/)**、**[next/jest](https://nextjs.org/docs/app/building-your-application/testing/jest)** 与 **[Testing Library](https://testing-library.com/)**。用例放在 **`tests/`** 目录，文件名为 `*.test.ts` 或 `*.test.tsx`（通过 `@/` 别名引用 `src` 下的代码）。
+
+```bash
+npm test            # 运行全部测试；对 src/**/*.{ts,tsx} 收集覆盖率
+npm run test:watch  # 监听模式（配置相同）
+```
+
+每次运行会在 **`test_reports/`** 下生成产物（该目录 **不提交到 Git**）：
+
+| 输出 | 说明 |
+|------|------|
+| `jest-report-<时间戳>.md` | 测试结果 Markdown，含 **`src` 逐文件覆盖率** |
+| `test_reports/coverage/` | Istanbul：`index.html`、`lcov.info`、`coverage-summary.json` |
+
+### CI（GitHub Actions）
+
+针对 **`main`** 分支发起或更新 **Pull Request** 时，会运行 **Jest (PR)** 工作流（`.github/workflows/jest-pr.yml`）。若 PR **仅**修改 Markdown / MDX（`**/*.md`、`**/*.mdx`），则 **不会触发** 该工作流。
+
+对包含代码或其它文件的 PR，CI 会对比 PR 的 base 与 head 提交：
+
+- **关联测试** — `src/`、`tests/` 下的改动会执行 **`jest --findRelatedTests`** 并收集覆盖率，相当于只跑与本次 diff 相关的用例。
+- **整仓套件** — 若改动触及 Jest / Next / 工具链根配置（例如 `jest.config.js`、`jest.setup.ts`、`package.json`、`package-lock.json`、`tsconfig.json`、`next.config.*`），则执行 **`npm test`**，确保配置变更仍能通过全量测试。
+
+运行成功后会将 **`test_reports/`** 上传为工作流 **Artifact**（Markdown 报告与 HTML/LCOV 覆盖率），并把最新的 **`jest-report-*.md`** 追加到 GitHub Actions 的 **Job Summary**，便于在网页上快速查看。
+
+还会在 PR 上发布一条 **可更新的置顶评论**（`jest-ci-report`）：每次推送会更新同一条评论，内容与报告一致（超长会截断并提示下载 Artifact）。**来自 fork 的 PR** 在安全策略下令牌权限受限，发表评论可能失败并已设置 `continue-on-error`；完整报告仍以 Artifact 与工作流日志为准。
 
 ## 📝 撰写内容
 
@@ -341,6 +384,10 @@ npx convex env set --prod TURNSTILE_SECRET_KEY "你的-secret"
 - **Install Command**：`npm install`  
 
 ## 📚 延伸阅读
+
+### 架构说明
+
+- [TECH.md](./TECH.md) — 技术栈、目录结构、内容管线、身份验证与测试说明
 
 ### Next.js
 

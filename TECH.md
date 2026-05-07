@@ -19,6 +19,7 @@ The website is built using a modern, performance-oriented stack centered around 
     *   `reading-time` for calculating estimated time to read.
 *   **Icons**: [Lucide React](https://lucide.dev/) for crisp, customizable SVG icons.
 *   **Date Formatting**: `date-fns` for lightweight date manipulation and formatting.
+*   **Testing**: [Jest](https://jestjs.io/) via **next/jest**, [@testing-library/react](https://testing-library.com/docs/react-testing-library/intro/), `jest-environment-jsdom`. Tests live under **`tests/`** and apply coverage to **`src/**/*.{ts,tsx}`**.
 
 ## Architecture & Project Structure
 
@@ -29,6 +30,15 @@ The project follows a standard Next.js App Router structure. The separation of c
 ├── content/              # The database: Markdown/MDX files containing the actual blog posts.
 │   └── posts/            # Individual blog post files (.md, .mdx).
 ├── public/               # Static assets (images, fonts, favicons).
+├── tests/                # Unit tests (*.test.ts, *.tsx); imports app code via @/ → src/.
+├── test_reports/         # Generated each test run (gitignored): Markdown summary + Istanbul HTML/lcov.
+├── jest.config.js        # Jest config (next/jest, coverage, custom Markdown reporter).
+├── jest.setup.ts         # @testing-library/jest-dom and shared test defaults.
+├── jest.env.js           # e.g. TZ=UTC for stable date assertions.
+├── jest.markdownReporter.cjs  # Writes jest-report-*.md including coverage tables.
+├── .github/
+│   ├── workflows/jest-pr.yml   # PR → main: Jest CI with coverage + artifact upload.
+│   └── scripts/run-jest-for-pr.sh  # Select findRelatedTests vs full npm test from git diff.
 ├── src/
 │   ├── app/              # Next.js App Router pages and layouts.
 │   │   ├── (home)/       # Root page showcasing latest posts or general info.
@@ -43,6 +53,23 @@ The project follows a standard Next.js App Router structure. The separation of c
 │       └── types.ts      # TypeScript interfaces defining Post and Frontmatter shapes.
 └── package.json          # Project dependencies and operational scripts.
 ```
+
+Note: the tree above abbreviates `src/lib`; see repository for the full file list.
+
+### Testing pipeline
+
+*   **Commands**: `npm test` runs Jest with **`collectCoverage: true`** for all matching files under `src/` (TypeScript and TSX). `npm run test:watch` uses the same configuration in watch mode.
+*   **Environment**: `jest.config.js` composes **[next/jest](https://nextjs.org/docs/app/building-your-application/testing/jest)** so transforms align with Next.js. **`moduleNameMapper`** maps `@/` to `src/`, matching `tsconfig.json` paths.
+*   **Output**: After each run, **`test_reports/jest-report-<ISO-timestamp>.md`** records pass/fail per test and appends **coverage totals and per-file percentages** (from `coverage-summary.json`). **`test_reports/coverage/`** holds Istanbul **`index.html`**, **`lcov.info`**, and **`coverage-summary.json`** for tooling or CI.
+*   **Middleware**: `src/middleware.ts` wraps `@convex-dev/auth` Next.js middleware; tests mock that package rather than hitting Convex.
+
+### Continuous integration (GitHub Actions)
+
+*   **Workflow**: `.github/workflows/jest-pr.yml` runs on **`pull_request`** events when the **base branch is `main`** (`opened`, `synchronize`, `reopened`).
+*   **Documentation-only PRs**: `paths-ignore` lists `**/*.md` and `**/*.mdx`. If **every** changed file matches those patterns, GitHub does **not** enqueue the workflow.
+*   **Runner**: `.github/scripts/run-jest-for-pr.sh` uses `git diff` between `github.event.pull_request.base.sha` and `head.sha`. Updates under `jest.config.js`, `jest.setup.ts`, `jest.env.js`, `jest.markdownReporter.cjs`, `package.json`, `package-lock.json`, `tsconfig.json`, or `next.config.*` trigger **`npm test`**. Otherwise, changed paths under `src/` or `tests/` invoke **`npx jest --findRelatedTests --coverage --passWithNoTests`**; unrelated-only changes skip Jest but leave the job green.
+*   **Artifacts**: successful focused or full runs upload **`test_reports/`** (timestamped Markdown report plus Istanbul output under `coverage/`). A step also **`cat`**s the newest **`jest-report-*.md`** into **`GITHUB_STEP_SUMMARY`** for the Actions run page.
+*   **PR comment**: **`marocchino/sticky-pull-request-comment`** (header **`jest-ci-report`**) publishes the Markdown report body to one updating comment per PR (body truncated around 60 KB if needed). The step uses **`continue-on-error`** because **`pull_request` workflows triggered from forks** often cannot post comments with the default **`GITHUB_TOKEN`**.
 
 ## Core Functionality Implementations
 
@@ -91,3 +118,10 @@ The app uses **[Convex](https://www.convex.dev/)** with **[@convex-dev/auth](htt
 *   On success, updates the password with `modifyAccountCredentials` and revokes existing sessions with `invalidateSessions` from `@convex-dev/auth/server`.
 
 Setup for both env vars and dev/prod deployments is documented in [README.md — Cloudflare Turnstile](./README.md#cloudflare-turnstile-forgot-password).
+
+### 5. Unit testing and coverage
+
+*   **Location**: test files under `tests/`; production code under `src/` is what coverage measures (see **Testing pipeline** under [Architecture & Project Structure](#architecture--project-structure) in this file).
+*   **Stack**: Jest, `next/jest`, React Testing Library, and `jsdom` for component tests. Heavy dependencies (e.g. `fs` for `src/lib/posts.ts`, `heic2any` for `src/lib/heicNormalize.ts`, Convex auth in middleware) are **mocked** in tests so the suite runs without a real Convex deployment or browser HEIC decode.
+*   **Artifacts**: each `npm test` run produces a timestamped Markdown report and refreshes `test_reports/coverage/` (see [README.md — Testing](./README.md#testing)).
+*   **CI**: Pull requests targeting **`main`** run Jest on GitHub Actions with the same report layout uploaded as artifacts; behavior is detailed under **[Continuous integration (GitHub Actions)](#continuous-integration-github-actions)** above.

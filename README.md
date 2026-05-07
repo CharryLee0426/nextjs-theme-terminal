@@ -16,6 +16,9 @@ A modern, retro terminal-inspired blog theme built with Next.js 15, featuring MD
 - 🔍 **SEO Friendly** - Proper meta tags, structured data, and sitemap generation
 - 🌙 **Terminal Color Schemes** - Customizable themes inspired by classic terminal emulators
 - 🚀 **Modern Stack** - TypeScript, Tailwind CSS, and cutting-edge web technologies
+- 🧪 **Unit tests** - [Jest](https://jestjs.io/) with [Testing Library](https://testing-library.com/); coverage and Markdown reports (see [Testing](#testing))
+
+For a deeper technical overview, see [TECH.md](./TECH.md).
 
 ## 🏗️ Project Structure
 ```
@@ -45,6 +48,15 @@ terminal-theme-nextjs/
 │   └── lib/                   # Utility functions and types
 │       ├── posts.ts           # Post management utilities
 │       └── types.ts           # TypeScript type definitions
+├── .github/
+│   ├── workflows/jest-pr.yml  # GitHub Actions: Jest + coverage on PRs to main
+│   └── scripts/run-jest-for-pr.sh  # CI: run related tests from PR diff (or full suite)
+├── tests/                     # Unit tests (*.test.ts, *.test.tsx)
+├── test_reports/              # Generated Jest reports (gitignored)
+├── jest.config.js             # Jest config (next/jest)
+├── jest.setup.ts              # Jest + Testing Library setup
+├── jest.env.js                # Test env (e.g. TZ for dates)
+├── jest.markdownReporter.cjs  # Custom Markdown + coverage summary reporter
 ├── mdx-components.tsx         # Global MDX component mapping
 ├── next.config.ts             # Next.js configuration
 └── package.json               # Dependencies and scripts
@@ -109,6 +121,35 @@ terminal-theme-nextjs/
 
 4. **Open your browser**
    Navigate to [http://localhost:3000](http://localhost:3000) to see your site.
+
+## 🧪 Testing
+
+Unit tests use **[Jest](https://jestjs.io/)** with **[next/jest](https://nextjs.org/docs/app/building-your-application/testing/jest)** and **[Testing Library](https://testing-library.com/)**. Test files live in **`tests/`** and are named `*.test.ts` or `*.test.tsx` (import application code from `src` via the `@/` path alias).
+
+```bash
+npm test            # run all tests; collect coverage for src/**/*.{ts,tsx}
+npm run test:watch  # watch mode (same options)
+```
+
+Each run writes output under **`test_reports/`** (this directory is **gitignored**):
+
+| Output | Description |
+|--------|-------------|
+| `jest-report-<timestamp>.md` | Markdown log of test results and a **per-file coverage** table for `src` |
+| `test_reports/coverage/` | Istanbul reports: `index.html`, `lcov.info`, `coverage-summary.json` |
+
+### CI (GitHub Actions)
+
+Opening or updating a **pull request targeting `main`** runs the **Jest (PR)** workflow (`.github/workflows/jest-pr.yml`). Pull requests that change **only** Markdown or MDX (`**/*.md`, `**/*.mdx`) do **not** trigger the workflow.
+
+For mixed or code-only PRs, CI compares the PR base and head commits:
+
+- **Related tests** — Changes under `src/` or `tests/` run **`jest --findRelatedTests`** with coverage so only suites tied to the diff execute locally-equivalent to a focused run.
+- **Full suite** — Changes that touch Jest/Next/tooling roots (for example `jest.config.js`, `jest.setup.ts`, `package.json`, `package-lock.json`, `tsconfig.json`, or `next.config.*`) run **`npm test`** so configuration churn still validates the whole project.
+
+Artifacts upload the **`test_reports/`** directory (Markdown report plus HTML/LCOV coverage), and the latest **`jest-report-*.md`** is appended to the GitHub Actions **job summary** for quick reading in the UI.
+
+The same report (with run link and truncation if it exceeds GitHub’s comment size limit) is posted as a **sticky pull request comment** that updates on each push (`header: jest-ci-report`). **Fork** pull requests use a read-only token for security, so that comment step may skip or fail silently (`continue-on-error`); artifacts and logs still contain the full report.
 
 ## 📝 Creating Content
 
@@ -327,6 +368,10 @@ The project is optimized for Vercel with:
 - **Install Command**: `npm install`
 
 ## 📚 Learn More
+
+### Project architecture
+
+- [TECH.md](./TECH.md) — stack, folder layout, content pipeline, auth, and testing notes
 
 ### Next.js Resources
 - [Next.js Documentation](https://nextjs.org/docs) - Learn about Next.js features and API
