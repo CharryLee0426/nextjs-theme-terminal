@@ -48,6 +48,9 @@ terminal-theme-nextjs/
 │   └── lib/                   # Utility functions and types
 │       ├── posts.ts           # Post management utilities
 │       └── types.ts           # TypeScript type definitions
+├── .github/
+│   ├── workflows/jest-pr.yml  # GitHub Actions: Jest + coverage on PRs to main
+│   └── scripts/run-jest-for-pr.sh  # CI: run related tests from PR diff (or full suite)
 ├── tests/                     # Unit tests (*.test.ts, *.test.tsx)
 ├── test_reports/              # Generated Jest reports (gitignored)
 ├── jest.config.js             # Jest config (next/jest)
@@ -134,6 +137,17 @@ Each run writes output under **`test_reports/`** (this directory is **gitignored
 |--------|-------------|
 | `jest-report-<timestamp>.md` | Markdown log of test results and a **per-file coverage** table for `src` |
 | `test_reports/coverage/` | Istanbul reports: `index.html`, `lcov.info`, `coverage-summary.json` |
+
+### CI (GitHub Actions)
+
+Opening or updating a **pull request targeting `main`** runs the **Jest (PR)** workflow (`.github/workflows/jest-pr.yml`). Pull requests that change **only** Markdown or MDX (`**/*.md`, `**/*.mdx`) do **not** trigger the workflow.
+
+For mixed or code-only PRs, CI compares the PR base and head commits:
+
+- **Related tests** — Changes under `src/` or `tests/` run **`jest --findRelatedTests`** with coverage so only suites tied to the diff execute locally-equivalent to a focused run.
+- **Full suite** — Changes that touch Jest/Next/tooling roots (for example `jest.config.js`, `jest.setup.ts`, `package.json`, `package-lock.json`, `tsconfig.json`, or `next.config.*`) run **`npm test`** so configuration churn still validates the whole project.
+
+Artifacts upload the **`test_reports/`** directory (Markdown report plus HTML/LCOV coverage), and the latest **`jest-report-*.md`** is appended to the GitHub Actions **job summary** for quick reading in the UI.
 
 ## 📝 Creating Content
 

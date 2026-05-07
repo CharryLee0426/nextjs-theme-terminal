@@ -49,6 +49,9 @@ terminal-theme-nextjs/
 │   └── lib/                   # 工具与类型
 │       ├── posts.ts           # 文章读取等
 │       └── types.ts           # TypeScript 类型
+├── .github/
+│   ├── workflows/jest-pr.yml  # GitHub Actions：面向 main 的 PR 跑 Jest + 覆盖率
+│   └── scripts/run-jest-for-pr.sh  # CI：按 PR diff 跑关联测试（或整仓套件）
 ├── tests/                     # 单元测试（*.test.ts / *.test.tsx）
 ├── test_reports/              # Jest 生成的报告（已 gitignore）
 ├── jest.config.js             # Jest 配置（next/jest）
@@ -144,6 +147,17 @@ npm run test:watch  # 监听模式（配置相同）
 |------|------|
 | `jest-report-<时间戳>.md` | 测试结果 Markdown，含 **`src` 逐文件覆盖率** |
 | `test_reports/coverage/` | Istanbul：`index.html`、`lcov.info`、`coverage-summary.json` |
+
+### CI（GitHub Actions）
+
+针对 **`main`** 分支发起或更新 **Pull Request** 时，会运行 **Jest (PR)** 工作流（`.github/workflows/jest-pr.yml`）。若 PR **仅**修改 Markdown / MDX（`**/*.md`、`**/*.mdx`），则 **不会触发** 该工作流。
+
+对包含代码或其它文件的 PR，CI 会对比 PR 的 base 与 head 提交：
+
+- **关联测试** — `src/`、`tests/` 下的改动会执行 **`jest --findRelatedTests`** 并收集覆盖率，相当于只跑与本次 diff 相关的用例。
+- **整仓套件** — 若改动触及 Jest / Next / 工具链根配置（例如 `jest.config.js`、`jest.setup.ts`、`package.json`、`package-lock.json`、`tsconfig.json`、`next.config.*`），则执行 **`npm test`**，确保配置变更仍能通过全量测试。
+
+运行成功后会将 **`test_reports/`** 上传为工作流 **Artifact**（Markdown 报告与 HTML/LCOV 覆盖率），并把最新的 **`jest-report-*.md`** 追加到 GitHub Actions 的 **Job Summary**，便于在网页上快速查看。
 
 ## 📝 撰写内容
 

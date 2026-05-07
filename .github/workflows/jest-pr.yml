@@ -1,0 +1,70 @@
+name: Jest (PR)
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened]
+    # If every changed file matches paths-ignore, the workflow does not run at all.
+    paths-ignore:
+      - '**/*.md'
+      - '**/*.mdx'
+
+concurrency:
+  group: jest-pr-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout (merge base + head)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Jest (diff-related or full suite)
+        id: jest
+        env:
+          CI: true
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: bash .github/scripts/run-jest-for-pr.sh
+
+      - name: Upload test report and coverage
+        if: always() && steps.jest.outputs.ran == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: jest-report-pr-${{ github.event.pull_request.number }}
+          path: test_reports/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Add report to job summary
+        if: always() && steps.jest.outputs.ran == 'true'
+        run: |
+          set -euo pipefail
+          latest="$(ls -t test_reports/jest-report-*.md 2>/dev/null | head -1 || true)"
+          if [[ -z "${latest}" ]]; then
+            echo "No markdown report found under test_reports/."
+            exit 0
+          fi
+          {
+            echo "## Jest report"
+            echo ""
+            echo "Artifact **jest-report-pr-${{ github.event.pull_request.number }}** contains HTML coverage under \`test_reports/coverage/\` and the markdown report."
+            echo ""
+            cat "${latest}"
+          } >> "${GITHUB_STEP_SUMMARY}"
