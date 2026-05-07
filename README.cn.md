@@ -16,6 +16,9 @@
 - 🔍 **SEO** — 合理的 meta 与结构化内容
 - 🌙 **终端配色变量** — 灵感来自经典终端模拟器
 - 🚀 **现代技术栈** — TypeScript、Tailwind CSS 等
+- 🧪 **单元测试** — [Jest](https://jestjs.io/) + [Testing Library](https://testing-library.com/)，覆盖率与 Markdown 报告（见 [测试](#测试)）
+
+更完整的技术说明见 [TECH.md](./TECH.md)。
 
 ## 🏗️ 项目结构
 
@@ -46,6 +49,12 @@ terminal-theme-nextjs/
 │   └── lib/                   # 工具与类型
 │       ├── posts.ts           # 文章读取等
 │       └── types.ts           # TypeScript 类型
+├── tests/                     # 单元测试（*.test.ts / *.test.tsx）
+├── test_reports/              # Jest 生成的报告（已 gitignore）
+├── jest.config.js             # Jest 配置（next/jest）
+├── jest.setup.ts              # Jest + Testing Library
+├── jest.env.js                # 测试环境（如日期 TZ）
+├── jest.markdownReporter.cjs  # 自定义 Markdown + 覆盖率汇总
 ├── mdx-components.tsx         # 全局 MDX 组件映射
 ├── next.config.ts             # Next.js 配置
 └── package.json               # 依赖与脚本
@@ -117,6 +126,24 @@ terminal-theme-nextjs/
    ```
 
 4. **在浏览器中打开** [http://localhost:3000](http://localhost:3000)
+
+<a id="测试"></a>
+
+## 🧪 测试
+
+单元测试使用 **[Jest](https://jestjs.io/)**、**[next/jest](https://nextjs.org/docs/app/building-your-application/testing/jest)** 与 **[Testing Library](https://testing-library.com/)**。用例放在 **`tests/`** 目录，文件名为 `*.test.ts` 或 `*.test.tsx`（通过 `@/` 别名引用 `src` 下的代码）。
+
+```bash
+npm test            # 运行全部测试；对 src/**/*.{ts,tsx} 收集覆盖率
+npm run test:watch  # 监听模式（配置相同）
+```
+
+每次运行会在 **`test_reports/`** 下生成产物（该目录 **不提交到 Git**）：
+
+| 输出 | 说明 |
+|------|------|
+| `jest-report-<时间戳>.md` | 测试结果 Markdown，含 **`src` 逐文件覆盖率** |
+| `test_reports/coverage/` | Istanbul：`index.html`、`lcov.info`、`coverage-summary.json` |
 
 ## 📝 撰写内容
 
@@ -341,6 +368,10 @@ npx convex env set --prod TURNSTILE_SECRET_KEY "你的-secret"
 - **Install Command**：`npm install`  
 
 ## 📚 延伸阅读
+
+### 架构说明
+
+- [TECH.md](./TECH.md) — 技术栈、目录结构、内容管线、身份验证与测试说明
 
 ### Next.js
 
