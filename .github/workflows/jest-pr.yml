@@ -19,6 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      pull-requests: write
 
     steps:
       - name: Checkout (merge base + head)
@@ -64,7 +65,50 @@ jobs:
           {
             echo "## Jest report"
             echo ""
-            echo "Artifact **jest-report-pr-${{ github.event.pull_request.number }}** contains HTML coverage under \`test_reports/coverage/\` and the markdown report."
+            echo "Artifact **jest-report-pr-${{ github.event.pull_request.number }}** contains HTML coverage under \`test_reports/coverage/\` and the Markdown report."
             echo ""
             cat "${latest}"
           } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Compose PR comment body
+        if: always() && steps.jest.outputs.ran == 'true'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p test_reports
+          body_file="test_reports/pr-comment-body.md"
+          latest="$(ls -t test_reports/jest-report-*.md 2>/dev/null | head -1 || true)"
+          {
+            echo "## Jest CI report"
+            echo ""
+            echo "> Workflow run: [open logs](${RUN_URL}) · Download **jest-report-pr-${PR_NUMBER}** artifact for HTML coverage."
+            echo ""
+            if [[ -n "${latest}" ]]; then
+              cat "${latest}"
+            else
+              echo "_No Markdown report file was generated; see the workflow log link above._"
+            fi
+          } > "${body_file}"
+          # GitHub issue/PR comments allow ~65535 characters; truncate to leave margin for truncation notice.
+          max_bytes=60000
+          size="$(wc -c < "${body_file}" | tr -d ' ')"
+          if [[ "${size}" -gt "${max_bytes}" ]]; then
+            head -c "${max_bytes}" "${body_file}" > "${body_file}.tmp"
+            mv "${body_file}.tmp" "${body_file}"
+            {
+              echo ""
+              echo "---"
+              echo "_Truncated (${size} bytes). Full Markdown + coverage: artifact **jest-report-pr-${PR_NUMBER}**._"
+            } >> "${body_file}"
+          fi
+
+      - name: Comment PR with Jest report (sticky)
+        continue-on-error: true
+        if: always() && steps.jest.outputs.ran == 'true'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: jest-ci-report
+          path: test_reports/pr-comment-body.md
+          ignore_empty: false

@@ -69,6 +69,7 @@ Note: the tree above abbreviates `src/lib`; see repository for the full file lis
 *   **Documentation-only PRs**: `paths-ignore` lists `**/*.md` and `**/*.mdx`. If **every** changed file matches those patterns, GitHub does **not** enqueue the workflow.
 *   **Runner**: `.github/scripts/run-jest-for-pr.sh` uses `git diff` between `github.event.pull_request.base.sha` and `head.sha`. Updates under `jest.config.js`, `jest.setup.ts`, `jest.env.js`, `jest.markdownReporter.cjs`, `package.json`, `package-lock.json`, `tsconfig.json`, or `next.config.*` trigger **`npm test`**. Otherwise, changed paths under `src/` or `tests/` invoke **`npx jest --findRelatedTests --coverage --passWithNoTests`**; unrelated-only changes skip Jest but leave the job green.
 *   **Artifacts**: successful focused or full runs upload **`test_reports/`** (timestamped Markdown report plus Istanbul output under `coverage/`). A step also **`cat`**s the newest **`jest-report-*.md`** into **`GITHUB_STEP_SUMMARY`** for the Actions run page.
+*   **PR comment**: **`marocchino/sticky-pull-request-comment`** (header **`jest-ci-report`**) publishes the Markdown report body to one updating comment per PR (body truncated around 60 KB if needed). The step uses **`continue-on-error`** because **`pull_request` workflows triggered from forks** often cannot post comments with the default **`GITHUB_TOKEN`**.
 
 ## Core Functionality Implementations
 

@@ -159,6 +159,8 @@ npm run test:watch  # 监听模式（配置相同）
 
 运行成功后会将 **`test_reports/`** 上传为工作流 **Artifact**（Markdown 报告与 HTML/LCOV 覆盖率），并把最新的 **`jest-report-*.md`** 追加到 GitHub Actions 的 **Job Summary**，便于在网页上快速查看。
 
+还会在 PR 上发布一条 **可更新的置顶评论**（`jest-ci-report`）：每次推送会更新同一条评论，内容与报告一致（超长会截断并提示下载 Artifact）。**来自 fork 的 PR** 在安全策略下令牌权限受限，发表评论可能失败并已设置 `continue-on-error`；完整报告仍以 Artifact 与工作流日志为准。
+
 ## 📝 撰写内容
 
 ### 新建文章

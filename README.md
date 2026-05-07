@@ -149,6 +149,8 @@ For mixed or code-only PRs, CI compares the PR base and head commits:
 
 Artifacts upload the **`test_reports/`** directory (Markdown report plus HTML/LCOV coverage), and the latest **`jest-report-*.md`** is appended to the GitHub Actions **job summary** for quick reading in the UI.
 
+The same report (with run link and truncation if it exceeds GitHub’s comment size limit) is posted as a **sticky pull request comment** that updates on each push (`header: jest-ci-report`). **Fork** pull requests use a read-only token for security, so that comment step may skip or fail silently (`continue-on-error`); artifacts and logs still contain the full report.
+
 ## 📝 Creating Content
 
 ### Writing Posts
