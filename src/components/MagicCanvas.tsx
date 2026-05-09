@@ -37,6 +37,8 @@ export function MagicCanvas() {
   const [isDrawing, setIsDrawing] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedImageUrl, setGeneratedImageUrl] = useState<string | null>(null);
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+  const [generationStatus, setGenerationStatus] = useState("Generating image");
 
   const getCanvasContext = useCallback(() => {
     const canvas = canvasRef.current;
@@ -46,16 +48,8 @@ export function MagicCanvas() {
   }, []);
 
   const paintPaper = useCallback((ctx: CanvasRenderingContext2D, width: number, height: number) => {
-    ctx.fillStyle = "#fbfaf7";
+    ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, width, height);
-    ctx.strokeStyle = "rgba(107, 114, 128, 0.12)";
-    ctx.lineWidth = 1;
-    for (let y = 48; y < height; y += 48) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(width, y);
-      ctx.stroke();
-    }
   }, []);
 
   const saveHistory = useCallback(() => {
@@ -74,11 +68,15 @@ export function MagicCanvas() {
       ? canvas.toDataURL("image/png")
       : null;
     const ratio = window.devicePixelRatio || 1;
-    const rect = parent.getBoundingClientRect();
-    canvas.width = Math.floor(rect.width * ratio);
-    canvas.height = Math.floor(rect.height * ratio);
-    canvas.style.width = `${rect.width}px`;
-    canvas.style.height = `${rect.height}px`;
+    const style = window.getComputedStyle(parent);
+    const horizontalPadding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+    const verticalPadding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+    const width = Math.max(1, parent.clientWidth - horizontalPadding);
+    const height = Math.max(1, parent.clientHeight - verticalPadding);
+    canvas.width = Math.floor(width * ratio);
+    canvas.height = Math.floor(height * ratio);
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
 
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) return;
@@ -169,30 +167,76 @@ export function MagicCanvas() {
     if (!state || isGenerating) return;
 
     setIsGenerating(true);
+    setGenerationStatus("Preparing sketch");
     try {
       const response = await fetch("/api/magic-canvas", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          Accept: "text/event-stream",
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           style,
           extraPrompt,
           imageDataUrl: state.canvas.toDataURL("image/png"),
         }),
       });
-      const payload = await response.json().catch(() => ({}));
 
       if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
         throw new Error(payload.error || "Image generation failed.");
       }
-      if (!payload.imageUrl) {
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error("Image generation response could not be read.");
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let imageUrl: string | null = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const chunks = buffer.split("\n\n");
+        buffer = chunks.pop() || "";
+
+        for (const chunk of chunks) {
+          const event = chunk.match(/^event: (.+)$/m)?.[1];
+          const dataText = chunk.match(/^data: (.+)$/m)?.[1];
+          if (!event || !dataText) continue;
+
+          const data = JSON.parse(dataText) as {
+            error?: string;
+            imageUrl?: string;
+            message?: string;
+          };
+
+          if (event === "progress" && data.message) {
+            setGenerationStatus(data.message);
+          }
+          if (event === "result" && data.imageUrl) {
+            imageUrl = data.imageUrl;
+          }
+          if (event === "error") {
+            throw new Error(data.error || "Image generation failed.");
+          }
+        }
+      }
+
+      if (!imageUrl) {
         throw new Error("The image generator did not return an image.");
       }
 
-      setGeneratedImageUrl(payload.imageUrl);
+      setGeneratedImageUrl(imageUrl);
     } catch (error) {
       toast.show(error instanceof Error ? error.message : "Image generation failed.", "error");
     } finally {
       setIsGenerating(false);
+      setGenerationStatus("Generating image");
     }
   };
 
@@ -201,13 +245,28 @@ export function MagicCanvas() {
     void generateImage();
   };
 
-  const saveGeneratedImage = () => {
+  const saveGeneratedImage = async () => {
     if (!generatedImageUrl) return;
-    const link = document.createElement("a");
-    link.href = generatedImageUrl;
-    link.download = "magic-canvas.png";
-    link.rel = "noopener";
-    link.click();
+    try {
+      const response = await fetch(`/api/magic-canvas?url=${encodeURIComponent(generatedImageUrl)}`);
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error || "Could not download generated image.");
+      }
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = "magic-canvas.png";
+      link.rel = "noopener";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      toast.show(error instanceof Error ? error.message : "Could not download generated image.", "error");
+    }
   };
 
   return (
@@ -315,10 +374,17 @@ export function MagicCanvas() {
 
         {generatedImageUrl && (
           <div className="magic-canvas__result">
+            <button
+              type="button"
+              className="magic-canvas__result-preview"
+              onClick={() => setPreviewImageUrl(generatedImageUrl)}
+              aria-label="Preview generated image"
+            >
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={generatedImageUrl} alt="Generated magic canvas artwork" />
+              <img src={generatedImageUrl} alt="Generated magic canvas artwork" />
+            </button>
             <div className="magic-canvas__result-actions" aria-label="Generated image actions">
-              <button type="button" onClick={saveGeneratedImage} title="Save" aria-label="Save image">
+              <button type="button" onClick={() => void saveGeneratedImage()} title="Save" aria-label="Save image">
                 <Download size={18} />
               </button>
               <button
@@ -336,7 +402,7 @@ export function MagicCanvas() {
         {isGenerating && (
           <div className="magic-canvas__loading" role="status" aria-live="polite">
             <LoaderCircle size={34} />
-            <span>Generating</span>
+            <span>{generationStatus}</span>
           </div>
         )}
       </div>
@@ -353,6 +419,31 @@ export function MagicCanvas() {
           {isGenerating ? <LoaderCircle size={20} /> : <Send size={20} />}
         </button>
       </form>
+
+      {previewImageUrl && (
+        <div
+          className="magic-canvas-preview"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Generated image preview"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setPreviewImageUrl(null);
+          }}
+        >
+          <button
+            type="button"
+            className="magic-canvas-preview__close"
+            onClick={() => setPreviewImageUrl(null)}
+            aria-label="Close preview"
+          >
+            <X size={26} />
+          </button>
+          <div className="magic-canvas-preview__inner" onClick={(event) => event.stopPropagation()}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={previewImageUrl} alt="Generated magic canvas artwork preview" />
+          </div>
+        </div>
+      )}
     </section>
   );
 }

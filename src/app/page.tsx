@@ -1,5 +1,4 @@
 import { PostCard } from '@/components/PostCard'
-import { MagicCanvas } from '@/components/MagicCanvas'
 import { getAllPosts } from '@/lib/posts'
 
 export default async function HomePage() {
@@ -27,8 +26,6 @@ export default async function HomePage() {
           <span className="terminal-command">echo &quot;Happy coding!&quot;</span>
         </p>
       </div>
-
-      <MagicCanvas />
       
       <div className="posts">
         {posts.map((post) => (
