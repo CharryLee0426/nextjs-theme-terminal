@@ -15,6 +15,8 @@
 - ⚡ **性能** — Next.js 15 + React 19
 - 🔍 **SEO** — 合理的 meta 与结构化内容
 - 🌙 **终端配色变量** — 灵感来自经典终端模拟器
+- 🪄 **Magic Canvas** — 在 `/canvas` 上绘制草图、补充提示词，并通过 fal.ai 做图生图风格转换
+- 🖼️ **Gallery 与账号系统** — Gallery 浏览 / 上传流程，以及 Convex 驱动的登录、注册、个人资料与密码重置
 - 🚀 **现代技术栈** — TypeScript、Tailwind CSS 等
 - 🧪 **单元测试** — [Jest](https://jestjs.io/) + [Testing Library](https://testing-library.com/)，覆盖率与 Markdown 报告（见 [测试](#测试)）
 
@@ -34,7 +36,13 @@ terminal-theme-nextjs/
 ├── src/
 │   ├── app/                   # Next.js App Router
 │   │   ├── about/             # 关于页
+│   │   ├── api/magic-canvas/  # fal.ai 图像生成与下载代理
+│   │   ├── canvas/            # Magic Canvas 绘图与风格转换页
+│   │   ├── gallery/           # Gallery 页面
 │   │   ├── posts/             # 动态文章路由
+│   │   ├── profile/           # 账号资料页
+│   │   ├── sign/              # 登录与密码重置
+│   │   ├── signup/            # 注册页
 │   │   ├── tags/              # 按标签筛选
 │   │   ├── globals.css        # 全局样式与终端主题
 │   │   ├── layout.tsx         # 根布局
@@ -43,6 +51,7 @@ terminal-theme-nextjs/
 │   │   ├── CodeBlock.tsx      # 语法高亮代码块
 │   │   ├── Header.tsx         # 终端风导航
 │   │   ├── Footer.tsx         # 页脚
+│   │   ├── MagicCanvas.tsx    # 草图画布、生成 UI、预览与下载
 │   │   ├── MDXContent.tsx     # MDX 渲染
 │   │   ├── PostCard.tsx       # 文章卡片
 │   │   └── *.tsx              # 其他 UI
@@ -87,6 +96,7 @@ terminal-theme-nextjs/
 
 ### 工具库
 
+- **[@fal-ai/client](https://fal.ai/)** — Magic Canvas 使用的 fal.ai 图像生成客户端
 - **[date-fns](https://date-fns.org/)** — 日期处理
 - **[reading-time](https://github.com/ngryman/reading-time)** — 阅读时长估算
 - **[lucide-react](https://lucide.dev/)** — 图标
@@ -130,11 +140,25 @@ terminal-theme-nextjs/
 
 4. **在浏览器中打开** [http://localhost:3000](http://localhost:3000)
 
+### Magic Canvas 配置
+
+`/canvas` 页面允许用户在空白白板上绘制草图，选择风格（`No` 或 `Anime`），输入额外提示词，并将画布图像提交给 fal.ai。浏览器只会调用本地 Next.js 路由 `src/app/api/magic-canvas/route.ts`；fal 凭据保留在服务端。
+
+本地开发时，在 `.env.local` 中加入以下变量之一；生产部署时也需要在 Next.js 托管平台设置：
+
+```bash
+FAL_KEY=your-fal-key
+# 或
+FAL_API_KEY=your-fal-key
+```
+
+该 API 使用 `fal-ai/bytedance/seedream/v4.5/edit`，在可用时会把队列 / 日志状态流式返回给加载动画，并通过同源代理下载生成图，避免浏览器跳转到远程图片地址。
+
 <a id="测试"></a>
 
 ## 🧪 测试
 
-单元测试使用 **[Jest](https://jestjs.io/)**、**[next/jest](https://nextjs.org/docs/app/building-your-application/testing/jest)** 与 **[Testing Library](https://testing-library.com/)**。用例放在 **`tests/`** 目录，文件名为 `*.test.ts` 或 `*.test.tsx`（通过 `@/` 别名引用 `src` 下的代码）。
+单元测试使用 **[Jest](https://jestjs.io/)**、**[next/jest](https://nextjs.org/docs/app/building-your-application/testing/jest)** 与 **[Testing Library](https://testing-library.com/)**。用例放在 **`tests/`** 目录，文件名为 `*.test.ts` 或 `*.test.tsx`（通过 `@/` 别名引用 `src` 下的代码）。Canvas 相关测试覆盖 Magic Canvas React 组件与 `/api/magic-canvas` 路由，并会 mock fal 调用。
 
 ```bash
 npm test            # 运行全部测试；对 src/**/*.{ts,tsx} 收集覆盖率
@@ -374,6 +398,7 @@ npx convex env set --prod TURNSTILE_SECRET_KEY "你的-secret"
    - 为 **生产** Convex 部署配置 `NEXT_PUBLIC_CONVEX_URL` 与 `NEXT_PUBLIC_CONVEX_SITE_URL`（详见上文 [Convex 身份验证与 JWT](#convex-auth-and-jwt-keys-dev-and-production)）。  
    - 在 Convex **生产** 部署上设置 `JWT_PRIVATE_KEY` 与 `JWKS`（同上）。  
    - **忘记密码**：在 Vercel 配置 `NEXT_PUBLIC_TURNSTILE_SITE_KEY`，在 Convex **生产** 部署配置 `TURNSTILE_SECRET_KEY`（详见 [Cloudflare Turnstile](#cloudflare-turnstile-forgot-password)）。  
+   - **Magic Canvas**：在 Next.js 托管平台配置 `FAL_KEY` 或 `FAL_API_KEY`。该值必须保留在服务端，不能加 `NEXT_PUBLIC_` 前缀。  
    - 修改环境变量后重新部署。  
 
 ### 构建说明

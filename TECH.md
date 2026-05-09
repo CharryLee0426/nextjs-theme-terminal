@@ -18,6 +18,7 @@ The website is built using a modern, performance-oriented stack centered around 
     *   `remark` (remark-gfm, remark-math) and `rehype` (rehype-katex, rehype-slug, rehype-highlight) ecosystems for markdown processing, including GitHub Flavored Markdown, Math formatting (KaTeX), and syntax highlighting.
     *   `reading-time` for calculating estimated time to read.
 *   **Icons**: [Lucide React](https://lucide.dev/) for crisp, customizable SVG icons.
+*   **Image generation**: [@fal-ai/client](https://fal.ai/) for server-side fal.ai image-to-image requests used by Magic Canvas.
 *   **Date Formatting**: `date-fns` for lightweight date manipulation and formatting.
 *   **Testing**: [Jest](https://jestjs.io/) via **next/jest**, [@testing-library/react](https://testing-library.com/docs/react-testing-library/intro/), `jest-environment-jsdom`. Tests live under **`tests/`** and apply coverage to **`src/**/*.{ts,tsx}`**.
 
@@ -41,11 +42,19 @@ The project follows a standard Next.js App Router structure. The separation of c
 │   └── scripts/run-jest-for-pr.sh  # Select findRelatedTests vs full npm test from git diff.
 ├── src/
 │   ├── app/              # Next.js App Router pages and layouts.
-│   │   ├── (home)/       # Root page showcasing latest posts or general info.
+│   │   ├── page.tsx      # Root page showcasing latest posts or general info.
 │   │   ├── about/        # About page route.
+│   │   ├── api/
+│   │   │   └── magic-canvas/  # fal.ai generation endpoint + generated-image download proxy.
+│   │   ├── canvas/       # Magic Canvas page route.
+│   │   ├── gallery/      # Gallery browsing/upload route.
 │   │   ├── posts/        # Blog post listing and individual post routes (/posts/[slug]).
+│   │   ├── profile/      # Account profile route.
+│   │   ├── sign/         # Sign-in and password reset route.
+│   │   ├── signup/       # Sign-up route.
 │   │   └── tags/         # Tag listing and tag-specific post routes (/tags/[tag]).
 │   ├── components/       # Reusable React components.
+│   │   ├── MagicCanvas.tsx    # Canvas drawing UI, fal status UI, preview, and download.
 │   │   ├── MDXContent.tsx# Core component mapping MDX elements to React components.
 │   │   └── ...           # Structural (Header, Footer) and specific MDX components (Callout, CodeBlock, etc.).
 │   └── lib/              # Core business and data-fetching logic.
@@ -119,9 +128,28 @@ The app uses **[Convex](https://www.convex.dev/)** with **[@convex-dev/auth](htt
 
 Setup for both env vars and dev/prod deployments is documented in [README.md — Cloudflare Turnstile](./README.md#cloudflare-turnstile-forgot-password).
 
-### 5. Unit testing and coverage
+### 5. Magic Canvas image-to-image workflow
+
+Magic Canvas is a dedicated drawing and style-transfer route at **`/canvas`**.
+
+*   **UI route**: `src/app/canvas/page.tsx` renders `src/components/MagicCanvas.tsx`.
+*   **Navigation**: `src/components/Header.tsx` exposes the route as `canvas` in both desktop and mobile nav.
+*   **Canvas behavior**:
+    *   The component owns a blank white `<canvas>` surface and supports pen, eraser, color swatches, stroke-size control, undo, and clear.
+    *   The style selector currently supports `No` and `Anime`. Selecting `Anime` causes the server route to prepend a long anime art-direction prompt to the user’s extra prompt.
+    *   While generation is in progress, drawing controls and the prompt input are disabled and a loading overlay is shown.
+    *   When an image returns, it replaces the canvas stage with a smooth result view. Result controls provide direct browser download, close-to-canvas, and click-to-preview behavior.
+*   **Server route**: `src/app/api/magic-canvas/route.ts`
+    *   `POST` accepts `{ style, extraPrompt, imageDataUrl }`, validates that a prompt source exists, uploads the canvas PNG to fal storage, and calls `fal-ai/bytedance/seedream/v4.5/edit`.
+    *   Credentials are read from server-only `FAL_KEY` or `FAL_API_KEY`. They must not be exposed as `NEXT_PUBLIC_*` values.
+    *   If the client sends `Accept: text/event-stream`, the route returns Server-Sent Events with fal queue/log updates (`progress`), the final image URL (`result`), or generation errors (`error`). fal does not provide a stable percentage for this model, so the UI displays real status/log text rather than simulated progress.
+    *   `GET ?url=...` proxies a generated image through the same origin with `Content-Disposition: attachment`, so the browser starts a download instead of navigating to the fal-hosted asset.
+*   **Styling**: `src/app/globals.css` keeps the tool surface close to GoodNotes-style ergonomics: compact top toolbar, centered whiteboard stage with margin, prompt bar at the bottom, hover-only result actions, and fullscreen preview overlay matching the gallery preview pattern.
+
+### 6. Unit testing and coverage
 
 *   **Location**: test files under `tests/`; production code under `src/` is what coverage measures (see **Testing pipeline** under [Architecture & Project Structure](#architecture--project-structure) in this file).
 *   **Stack**: Jest, `next/jest`, React Testing Library, and `jsdom` for component tests. Heavy dependencies (e.g. `fs` for `src/lib/posts.ts`, `heic2any` for `src/lib/heicNormalize.ts`, Convex auth in middleware) are **mocked** in tests so the suite runs without a real Convex deployment or browser HEIC decode.
+*   **Canvas tests**: `tests/components/MagicCanvas.test.tsx` covers controls, streaming generation request payloads, preview behavior, and proxied download behavior. `tests/app/magicCanvasRoute.test.ts` covers route validation, fal upload/subscribe payloads, SSE output, and download proxy headers.
 *   **Artifacts**: each `npm test` run produces a timestamped Markdown report and refreshes `test_reports/coverage/` (see [README.md — Testing](./README.md#testing)).
 *   **CI**: Pull requests targeting **`main`** run Jest on GitHub Actions with the same report layout uploaded as artifacts; behavior is detailed under **[Continuous integration (GitHub Actions)](#continuous-integration-github-actions)** above.
