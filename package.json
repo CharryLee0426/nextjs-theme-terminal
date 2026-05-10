@@ -15,6 +15,7 @@
   "dependencies": {
     "@auth/core": "^0.37.0",
     "@convex-dev/auth": "^0.0.91",
+    "@fal-ai/client": "^1.10.1",
     "@marsidev/react-turnstile": "^1.5.1",
     "@mdx-js/loader": "^3.1.1",
     "@mdx-js/react": "^3.1.1",
