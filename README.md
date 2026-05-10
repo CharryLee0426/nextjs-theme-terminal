@@ -15,7 +15,7 @@ A modern, retro terminal-inspired blog theme built with Next.js 15, featuring MD
 - ⚡ **Performance Optimized** - Built with Next.js 15 and React 19 for lightning-fast performance
 - 🔍 **SEO Friendly** - Proper meta tags, structured data, and sitemap generation
 - 🌙 **Terminal Color Schemes** - Customizable themes inspired by classic terminal emulators
-- 🪄 **Magic Canvas** - Draw a sketch on `/canvas`, add prompt text, and transform it with fal.ai image-to-image generation
+- 🪄 **Magic Canvas** - Signed-in users can draw on `/canvas`, transform sketches with fal.ai image-to-image generation, and save results to Convex with metadata
 - 🖼️ **Gallery & Accounts** - Gallery browsing/upload flows plus Convex-backed sign-in, sign-up, profile, and password reset
 - 🚀 **Modern Stack** - TypeScript, Tailwind CSS, and cutting-edge web technologies
 - 🧪 **Unit tests** - [Jest](https://jestjs.io/) with [Testing Library](https://testing-library.com/); coverage and Markdown reports (see [Testing](#testing))
@@ -134,7 +134,7 @@ terminal-theme-nextjs/
 
 ### Magic Canvas setup
 
-The `/canvas` page lets users sketch on a blank whiteboard, choose a style (`No` or `Anime`), add an extra prompt, and submit the canvas image to fal.ai. The browser calls the local Next.js route at `src/app/api/magic-canvas/route.ts`; fal credentials stay server-side.
+The `/canvas` page is available only after sign-in. Signed-out visitors see a login guide instead of the editor. Signed-in users can sketch on a blank whiteboard, choose a style (`No` or `Anime`), add an extra prompt, and submit the canvas image to fal.ai. The browser calls the local Next.js route at `src/app/api/magic-canvas/route.ts`; fal credentials stay server-side.
 
 Add one of these variables to `.env.local` for local development and to your production host for deployment:
 
@@ -146,9 +146,24 @@ FAL_API_KEY=your-fal-key
 
 The API uses `fal-ai/bytedance/seedream/v4.5/edit`, streams queue/log status back to the loading overlay when available, and proxies generated-image downloads so the browser starts a download instead of navigating to the remote asset URL.
 
+After generation succeeds, the client stores the generated image in Convex storage through authenticated Convex mutations. Each saved record is tied to the current user and stores:
+
+- user id
+- creation time
+- selected style
+- model name
+- extra prompt
+- Convex storage id for the generated image
+
+Deploy the Convex schema/functions before using this in production:
+
+```bash
+npx convex deploy
+```
+
 ## 🧪 Testing
 
-Unit tests use **[Jest](https://jestjs.io/)** with **[next/jest](https://nextjs.org/docs/app/building-your-application/testing/jest)** and **[Testing Library](https://testing-library.com/)**. Test files live in **`tests/`** and are named `*.test.ts` or `*.test.tsx` (import application code from `src` via the `@/` path alias). Canvas coverage includes both the Magic Canvas React component and the `/api/magic-canvas` route, with fal calls mocked.
+Unit tests use **[Jest](https://jestjs.io/)** with **[next/jest](https://nextjs.org/docs/app/building-your-application/testing/jest)** and **[Testing Library](https://testing-library.com/)**. Test files live in **`tests/`** and are named `*.test.ts` or `*.test.tsx` (import application code from `src` via the `@/` path alias). Canvas coverage includes the Magic Canvas React component, auth gating, Convex save flow, and the `/api/magic-canvas` route, with fal and Convex calls mocked.
 
 ```bash
 npm test            # run all tests; collect coverage for src/**/*.{ts,tsx}
@@ -379,7 +394,7 @@ After changing Convex env vars, restart `npx convex dev` if it is running.
 
 3. **Environment variables**
    - Add `NEXT_PUBLIC_CONVEX_URL` and `NEXT_PUBLIC_CONVEX_SITE_URL` for your **production** Convex deployment (see [Convex Auth and JWT keys](#convex-auth-and-jwt-keys-dev-and-production)).
-   - On Convex **production**, set `JWT_PRIVATE_KEY` and `JWKS` (same section).
+   - On Convex **production**, set `JWT_PRIVATE_KEY` and `JWKS` (same section), and deploy the latest Convex schema/functions with `npx convex deploy` so Magic Canvas can write `canvasImages`.
    - For **forgot password**, add `NEXT_PUBLIC_TURNSTILE_SITE_KEY` on Vercel and `TURNSTILE_SECRET_KEY` on Convex **production** (see [Cloudflare Turnstile](#cloudflare-turnstile-forgot-password)).
    - For **Magic Canvas**, add `FAL_KEY` or `FAL_API_KEY` on the Next.js host. This value must stay server-side and must not be prefixed with `NEXT_PUBLIC_`.
    - Redeploy after changing env vars.

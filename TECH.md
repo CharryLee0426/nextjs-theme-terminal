@@ -134,22 +134,29 @@ Magic Canvas is a dedicated drawing and style-transfer route at **`/canvas`**.
 
 *   **UI route**: `src/app/canvas/page.tsx` renders `src/components/MagicCanvas.tsx`.
 *   **Navigation**: `src/components/Header.tsx` exposes the route as `canvas` in both desktop and mobile nav.
+*   **Access control**: the component uses `useConvexAuth()` and only renders the editor for authenticated users. Signed-out users see a login guide linking to `/sign`; auth-loading users see a lightweight loading state.
 *   **Canvas behavior**:
     *   The component owns a blank white `<canvas>` surface and supports pen, eraser, color swatches, stroke-size control, undo, and clear.
     *   The style selector currently supports `No` and `Anime`. Selecting `Anime` causes the server route to prepend a long anime art-direction prompt to the user’s extra prompt.
     *   While generation is in progress, drawing controls and the prompt input are disabled and a loading overlay is shown.
     *   When an image returns, it replaces the canvas stage with a smooth result view. Result controls provide direct browser download, close-to-canvas, and click-to-preview behavior.
+    *   Before the result is shown, the client downloads the generated image through the same-origin proxy, uploads it to Convex storage, and creates a metadata record tied to the signed-in user.
 *   **Server route**: `src/app/api/magic-canvas/route.ts`
     *   `POST` accepts `{ style, extraPrompt, imageDataUrl }`, validates that a prompt source exists, uploads the canvas PNG to fal storage, and calls `fal-ai/bytedance/seedream/v4.5/edit`.
     *   Credentials are read from server-only `FAL_KEY` or `FAL_API_KEY`. They must not be exposed as `NEXT_PUBLIC_*` values.
     *   If the client sends `Accept: text/event-stream`, the route returns Server-Sent Events with fal queue/log updates (`progress`), the final image URL (`result`), or generation errors (`error`). fal does not provide a stable percentage for this model, so the UI displays real status/log text rather than simulated progress.
     *   `GET ?url=...` proxies a generated image through the same origin with `Content-Disposition: attachment`, so the browser starts a download instead of navigating to the fal-hosted asset.
+*   **Convex persistence**:
+    *   `convex/schema.ts` defines `canvasImages` with `userId`, `imageId`, `createdAt`, `style`, `model`, and `extraPrompt`.
+    *   `convex/magicCanvas.ts` exposes authenticated `generateUploadUrl` and `createImage` mutations, plus `listMine` for retrieving a user’s saved generations.
+    *   `createdAt` is assigned server-side in Convex with `Date.now()`, so clients cannot spoof creation time.
+    *   Deploy these schema/function changes with `npx convex deploy` before relying on production persistence.
 *   **Styling**: `src/app/globals.css` keeps the tool surface close to GoodNotes-style ergonomics: compact top toolbar, centered whiteboard stage with margin, prompt bar at the bottom, hover-only result actions, and fullscreen preview overlay matching the gallery preview pattern.
 
 ### 6. Unit testing and coverage
 
 *   **Location**: test files under `tests/`; production code under `src/` is what coverage measures (see **Testing pipeline** under [Architecture & Project Structure](#architecture--project-structure) in this file).
 *   **Stack**: Jest, `next/jest`, React Testing Library, and `jsdom` for component tests. Heavy dependencies (e.g. `fs` for `src/lib/posts.ts`, `heic2any` for `src/lib/heicNormalize.ts`, Convex auth in middleware) are **mocked** in tests so the suite runs without a real Convex deployment or browser HEIC decode.
-*   **Canvas tests**: `tests/components/MagicCanvas.test.tsx` covers controls, streaming generation request payloads, preview behavior, and proxied download behavior. `tests/app/magicCanvasRoute.test.ts` covers route validation, fal upload/subscribe payloads, SSE output, and download proxy headers.
+*   **Canvas tests**: `tests/components/MagicCanvas.test.tsx` covers controls, auth gating, streaming generation request payloads, Convex save flow, preview behavior, and proxied download behavior. `tests/app/magicCanvasRoute.test.ts` covers route validation, fal upload/subscribe payloads, SSE output, and download proxy headers.
 *   **Artifacts**: each `npm test` run produces a timestamped Markdown report and refreshes `test_reports/coverage/` (see [README.md — Testing](./README.md#testing)).
 *   **CI**: Pull requests targeting **`main`** run Jest on GitHub Actions with the same report layout uploaded as artifacts; behavior is detailed under **[Continuous integration (GitHub Actions)](#continuous-integration-github-actions)** above.
