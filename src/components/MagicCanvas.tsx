@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   Brush,
   Download,
@@ -11,8 +12,11 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { useConvexAuth, useMutation } from "convex/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAppToast } from "@/components/ToastProvider";
+import { api } from "../../convex/_generated/api";
+import type { Id } from "../../convex/_generated/dataModel";
 
 type Tool = "pen" | "eraser";
 type StyleChoice = "none" | "anime";
@@ -23,9 +27,13 @@ const STYLE_LABELS: Record<StyleChoice, string> = {
 };
 
 const INK_COLORS = ["#111827", "#ef4444", "#2563eb", "#16a34a", "#f97316"];
+const MAGIC_CANVAS_MODEL = "fal-ai/bytedance/seedream/v4.5/edit";
 
 export function MagicCanvas() {
   const toast = useAppToast();
+  const { isLoading: authLoading, isAuthenticated } = useConvexAuth();
+  const generateConvexUploadUrl = useMutation(api.magicCanvas.generateUploadUrl);
+  const createCanvasImage = useMutation(api.magicCanvas.createImage);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
   const historyRef = useRef<ImageData[]>([]);
@@ -162,10 +170,54 @@ export function MagicCanvas() {
     paintPaper(state.ctx, state.canvas.width, state.canvas.height);
   };
 
+  const persistGeneratedImage = async (
+    imageUrl: string,
+    selectedStyle: StyleChoice,
+    prompt: string,
+  ) => {
+    setGenerationStatus("Saving image");
+    const imageResponse = await fetch(`/api/magic-canvas?url=${encodeURIComponent(imageUrl)}`);
+    if (!imageResponse.ok) {
+      const payload = await imageResponse.json().catch(() => ({}));
+      throw new Error(payload.error || "Generated image could not be saved.");
+    }
+
+    const imageBlob = await imageResponse.blob();
+    const uploadUrl = await generateConvexUploadUrl();
+    const uploadResponse = await fetch(uploadUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": imageBlob.type || "image/png",
+      },
+      body: imageBlob,
+    });
+    if (!uploadResponse.ok) {
+      throw new Error("Generated image upload failed.");
+    }
+
+    const uploadJson = (await uploadResponse.json()) as { storageId: string };
+    await createCanvasImage({
+      imageId: uploadJson.storageId as Id<"_storage">,
+      style: selectedStyle,
+      model: MAGIC_CANVAS_MODEL,
+      extraPrompt: prompt,
+    });
+  };
+
   const generateImage = async () => {
     const state = getCanvasContext();
     if (!state || isGenerating) return;
+    if (authLoading) {
+      toast.show("Authentication is still loading. Try again in a moment.", "error");
+      return;
+    }
+    if (!isAuthenticated) {
+      toast.show("Sign in before generating so the image can be saved to your account.", "error");
+      return;
+    }
 
+    const selectedStyle = style;
+    const prompt = extraPrompt;
     setIsGenerating(true);
     setGenerationStatus("Preparing sketch");
     try {
@@ -176,8 +228,8 @@ export function MagicCanvas() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          style,
-          extraPrompt,
+          style: selectedStyle,
+          extraPrompt: prompt,
           imageDataUrl: state.canvas.toDataURL("image/png"),
         }),
       });
@@ -231,6 +283,7 @@ export function MagicCanvas() {
         throw new Error("The image generator did not return an image.");
       }
 
+      await persistGeneratedImage(imageUrl, selectedStyle, prompt);
       setGeneratedImageUrl(imageUrl);
     } catch (error) {
       toast.show(error instanceof Error ? error.message : "Image generation failed.", "error");
@@ -269,6 +322,31 @@ export function MagicCanvas() {
     }
   };
 
+  if (authLoading) {
+    return (
+      <section className="magic-canvas magic-canvas-auth" aria-label="Magic canvas">
+        <LoaderCircle size={30} aria-hidden="true" />
+        <p>Checking account status</p>
+      </section>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <section className="magic-canvas magic-canvas-auth" aria-label="Magic canvas">
+        <Sparkles size={32} aria-hidden="true" />
+        <h1>Sign in to use Magic Canvas</h1>
+        <p>
+          Magic Canvas saves every generated image to your account with its style,
+          model, prompt, and creation time.
+        </p>
+        <Link href="/sign" className="magic-canvas-auth__link">
+          Log in
+        </Link>
+      </section>
+    );
+  }
+
   return (
     <section className="magic-canvas" aria-label="Magic canvas">
       <div className="magic-canvas__toolbar" aria-label="Canvas tools">
@@ -277,7 +355,7 @@ export function MagicCanvas() {
           <select
             value={style}
             onChange={(event) => setStyle(event.target.value as StyleChoice)}
-            disabled={isGenerating}
+            disabled={isGenerating || authLoading}
             aria-label="Choose image style"
           >
             {Object.entries(STYLE_LABELS).map(([value, label]) => (
@@ -293,7 +371,7 @@ export function MagicCanvas() {
             type="button"
             className={tool === "pen" ? "magic-canvas__tool is-active" : "magic-canvas__tool"}
             onClick={() => setTool("pen")}
-            disabled={isGenerating || Boolean(generatedImageUrl)}
+            disabled={isGenerating || authLoading || Boolean(generatedImageUrl)}
             title="Pen"
             aria-label="Pen"
           >
@@ -303,7 +381,7 @@ export function MagicCanvas() {
             type="button"
             className={tool === "eraser" ? "magic-canvas__tool is-active" : "magic-canvas__tool"}
             onClick={() => setTool("eraser")}
-            disabled={isGenerating || Boolean(generatedImageUrl)}
+            disabled={isGenerating || authLoading || Boolean(generatedImageUrl)}
             title="Eraser"
             aria-label="Eraser"
           >
@@ -319,7 +397,7 @@ export function MagicCanvas() {
               className={ink === color ? "magic-canvas__swatch is-active" : "magic-canvas__swatch"}
               style={{ backgroundColor: color }}
               onClick={() => setInk(color)}
-              disabled={isGenerating || Boolean(generatedImageUrl)}
+              disabled={isGenerating || authLoading || Boolean(generatedImageUrl)}
               aria-label={`Use ink ${color}`}
               title={color}
             />
@@ -333,7 +411,7 @@ export function MagicCanvas() {
             max="22"
             value={size}
             onChange={(event) => setSize(Number(event.target.value))}
-            disabled={isGenerating || Boolean(generatedImageUrl)}
+            disabled={isGenerating || authLoading || Boolean(generatedImageUrl)}
           />
         </label>
 
@@ -342,7 +420,7 @@ export function MagicCanvas() {
             type="button"
             className="magic-canvas__tool"
             onClick={undo}
-            disabled={isGenerating || Boolean(generatedImageUrl)}
+            disabled={isGenerating || authLoading || Boolean(generatedImageUrl)}
             title="Undo"
             aria-label="Undo"
           >
@@ -352,7 +430,7 @@ export function MagicCanvas() {
             type="button"
             className="magic-canvas__tool"
             onClick={clearCanvas}
-            disabled={isGenerating || Boolean(generatedImageUrl)}
+            disabled={isGenerating || authLoading || Boolean(generatedImageUrl)}
             title="Clear"
             aria-label="Clear"
           >
@@ -412,10 +490,10 @@ export function MagicCanvas() {
           value={extraPrompt}
           onChange={(event) => setExtraPrompt(event.target.value)}
           placeholder="Add extra prompt"
-          disabled={isGenerating}
+          disabled={isGenerating || authLoading}
           aria-label="Extra image prompt"
         />
-        <button type="submit" disabled={isGenerating} aria-label="Generate image" title="Generate">
+        <button type="submit" disabled={isGenerating || authLoading} aria-label="Generate image" title="Generate">
           {isGenerating ? <LoaderCircle size={20} /> : <Send size={20} />}
         </button>
       </form>

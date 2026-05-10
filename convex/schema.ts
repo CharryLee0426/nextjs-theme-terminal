@@ -28,4 +28,14 @@ export default defineSchema({
     likes: v.number(),
     dislikes: v.number(),
   }).index("by_displayAt", ["displayAt"]),
+  canvasImages: defineTable({
+    userId: v.id("users"),
+    imageId: v.id("_storage"),
+    createdAt: v.number(),
+    style: v.union(v.literal("none"), v.literal("anime")),
+    model: v.string(),
+    extraPrompt: v.string(),
+  })
+    .index("by_user_createdAt", ["userId", "createdAt"])
+    .index("by_createdAt", ["createdAt"]),
 });

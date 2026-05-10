@@ -987,6 +987,52 @@ a:hover {
   background: var(--terminal-green);
 }
 
+.magic-canvas-auth {
+  min-height: clamp(360px, 52vh, 560px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: clamp(28px, 5vw, 56px);
+  text-align: center;
+}
+
+.magic-canvas-auth svg {
+  color: var(--terminal-green);
+}
+
+.magic-canvas-auth h1 {
+  margin: 0;
+  color: var(--foreground);
+  font-size: clamp(1.35rem, 3vw, 2rem);
+}
+
+.magic-canvas-auth p {
+  max-width: 620px;
+  margin: 0;
+  color: var(--color);
+  line-height: 1.6;
+}
+
+.magic-canvas-auth__link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 2px solid var(--terminal-green);
+  border-radius: 8px;
+  background: rgba(0, 255, 65, 0.12);
+  color: var(--terminal-green);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.magic-canvas-auth__link:hover {
+  background: rgba(0, 255, 65, 0.2);
+}
+
 .magic-canvas-preview {
   position: fixed;
   inset: 0;

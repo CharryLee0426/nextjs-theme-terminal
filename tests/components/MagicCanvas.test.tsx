@@ -3,6 +3,16 @@ import { TextDecoder as NodeTextDecoder, TextEncoder as NodeTextEncoder } from "
 import { MagicCanvas } from "@/components/MagicCanvas";
 import { ToastProvider } from "@/components/ToastProvider";
 
+const mockGenerateUploadUrl = jest.fn();
+const mockCreateCanvasImage = jest.fn();
+const mockUseConvexAuth = jest.fn();
+const mockUseMutation = jest.fn();
+
+jest.mock("convex/react", () => ({
+  useConvexAuth: () => mockUseConvexAuth(),
+  useMutation: (...args: unknown[]) => mockUseMutation(...args),
+}));
+
 function renderCanvas() {
   return render(
     <ToastProvider>
@@ -31,6 +41,13 @@ function blobResponse(blob: Blob) {
     ok: true,
     blob: jest.fn(async () => blob),
     json: jest.fn(async () => ({})),
+  };
+}
+
+function uploadResponse(storageId = "storage-id") {
+  return {
+    ok: true,
+    json: jest.fn(async () => ({ storageId })),
   };
 }
 
@@ -65,6 +82,14 @@ describe("MagicCanvas", () => {
     URL.createObjectURL = jest.fn(() => "blob:magic-canvas") as typeof URL.createObjectURL;
     URL.revokeObjectURL = jest.fn() as typeof URL.revokeObjectURL;
     global.fetch = jest.fn();
+    mockUseConvexAuth.mockReturnValue({ isLoading: false, isAuthenticated: true });
+    mockGenerateUploadUrl.mockResolvedValue("https://convex.upload/generated");
+    mockCreateCanvasImage.mockResolvedValue("canvas-image-id");
+    mockUseMutation.mockImplementation(() =>
+      mockUseMutation.mock.calls.length % 2 === 1
+        ? mockGenerateUploadUrl
+        : mockCreateCanvasImage,
+    );
   });
 
   afterAll(() => {
@@ -89,7 +114,9 @@ describe("MagicCanvas", () => {
         'event: progress\ndata: {"message":"Rendering final image"}\n\n',
         'event: result\ndata: {"imageUrl":"https://fal.storage/generated.png"}\n\n',
       ]),
-    );
+    )
+      .mockResolvedValueOnce(blobResponse(new Blob(["png"], { type: "image/png" })))
+      .mockResolvedValueOnce(uploadResponse("convex-storage-id"));
     renderCanvas();
 
     fireEvent.change(screen.getByLabelText("Choose image style"), {
@@ -123,12 +150,34 @@ describe("MagicCanvas", () => {
       extraPrompt: "A quiet night market",
       imageDataUrl: "data:image/png;base64,Y2FudmFz",
     });
+    expect(mockGenerateUploadUrl).toHaveBeenCalledTimes(1);
+    expect(global.fetch).toHaveBeenNthCalledWith(
+      2,
+      "/api/magic-canvas?url=https%3A%2F%2Ffal.storage%2Fgenerated.png",
+    );
+    expect(global.fetch).toHaveBeenNthCalledWith(
+      3,
+      "https://convex.upload/generated",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.any(Blob),
+      }),
+    );
+    expect(mockCreateCanvasImage).toHaveBeenCalledWith({
+      imageId: "convex-storage-id",
+      style: "anime",
+      model: "fal-ai/bytedance/seedream/v4.5/edit",
+      extraPrompt: "A quiet night market",
+    });
   });
 
   it("opens and closes a page-local preview for generated images", async () => {
-    (global.fetch as jest.Mock).mockResolvedValueOnce(
-      sseResponse(['event: result\ndata: {"imageUrl":"https://fal.storage/generated.png"}\n\n']),
-    );
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce(
+        sseResponse(['event: result\ndata: {"imageUrl":"https://fal.storage/generated.png"}\n\n']),
+      )
+      .mockResolvedValueOnce(blobResponse(new Blob(["png"], { type: "image/png" })))
+      .mockResolvedValueOnce(uploadResponse());
     renderCanvas();
 
     fireEvent.change(screen.getByLabelText("Extra image prompt"), {
@@ -150,7 +199,9 @@ describe("MagicCanvas", () => {
       .mockResolvedValueOnce(
         sseResponse(['event: result\ndata: {"imageUrl":"https://fal.storage/generated.png"}\n\n']),
       )
-      .mockResolvedValueOnce(blobResponse(new Blob(["png"], { type: "image/png" })));
+      .mockResolvedValueOnce(blobResponse(new Blob(["png"], { type: "image/png" })))
+      .mockResolvedValueOnce(uploadResponse())
+      .mockResolvedValueOnce(blobResponse(new Blob(["download"], { type: "image/png" })));
     renderCanvas();
 
     fireEvent.change(screen.getByLabelText("Extra image prompt"), {
@@ -166,5 +217,26 @@ describe("MagicCanvas", () => {
     });
     expect(URL.createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
     expect(anchorClick).toHaveBeenCalled();
+  });
+
+  it("shows a sign-in guide instead of the editor when signed out", () => {
+    mockUseConvexAuth.mockReturnValue({ isLoading: false, isAuthenticated: false });
+    renderCanvas();
+
+    expect(screen.getByRole("heading", { name: "Sign in to use Magic Canvas" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Log in" })).toHaveAttribute("href", "/sign");
+    expect(screen.queryByLabelText("Extra image prompt")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Generate image")).not.toBeInTheDocument();
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(mockGenerateUploadUrl).not.toHaveBeenCalled();
+  });
+
+  it("shows an auth loading state before deciding access", () => {
+    mockUseConvexAuth.mockReturnValue({ isLoading: true, isAuthenticated: false });
+    renderCanvas();
+
+    expect(screen.getByText("Checking account status")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Extra image prompt")).not.toBeInTheDocument();
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 });
