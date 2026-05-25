@@ -11,6 +11,7 @@
 import type * as account from "../account.js";
 import type * as auth from "../auth.js";
 import type * as gallery from "../gallery.js";
+import type * as games from "../games.js";
 import type * as http from "../http.js";
 import type * as magicCanvas from "../magicCanvas.js";
 import type * as passwordReset from "../passwordReset.js";
@@ -25,6 +26,7 @@ declare const fullApi: ApiFromModules<{
   account: typeof account;
   auth: typeof auth;
   gallery: typeof gallery;
+  games: typeof games;
   http: typeof http;
   magicCanvas: typeof magicCanvas;
   passwordReset: typeof passwordReset;

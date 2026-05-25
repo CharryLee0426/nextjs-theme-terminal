@@ -47,6 +47,7 @@ export function Header() {
             <ul className="menu__inner">
               <li><Link href="/about">about</Link></li>
               <li><Link href="/canvas">canvas</Link></li>
+              <li><Link href="/game">game</Link></li>
               <li><Link href="/gallery">gallery</Link></li>
               <li><Link href="/posts">posts</Link></li>
               <li><Link href="/tags">tags</Link></li>
@@ -60,6 +61,7 @@ export function Header() {
           <ul className="menu-mobile__inner">
             <li><Link href="/about" onClick={() => setIsMenuOpen(false)}>about</Link></li>
             <li><Link href="/canvas" onClick={() => setIsMenuOpen(false)}>canvas</Link></li>
+            <li><Link href="/game" onClick={() => setIsMenuOpen(false)}>game</Link></li>
             <li><Link href="/gallery" onClick={() => setIsMenuOpen(false)}>gallery</Link></li>
             <li><Link href="/posts" onClick={() => setIsMenuOpen(false)}>posts</Link></li>
             <li><Link href="/tags" onClick={() => setIsMenuOpen(false)}>tags</Link></li>
