@@ -18,6 +18,7 @@ The website is built using a modern, performance-oriented stack centered around 
     *   `remark` (remark-gfm, remark-math) and `rehype` (rehype-katex, rehype-slug, rehype-highlight) ecosystems for markdown processing, including GitHub Flavored Markdown, Math formatting (KaTeX), and syntax highlighting.
     *   `reading-time` for calculating estimated time to read.
 *   **Icons**: [Lucide React](https://lucide.dev/) for crisp, customizable SVG icons.
+*   **AI generation**: OpenAI Responses API for AI Game Creator HTML/CSS/JS generation.
 *   **Image generation**: [@fal-ai/client](https://fal.ai/) for server-side fal.ai image-to-image requests used by Magic Canvas.
 *   **Date Formatting**: `date-fns` for lightweight date manipulation and formatting.
 *   **Testing**: [Jest](https://jestjs.io/) via **next/jest**, [@testing-library/react](https://testing-library.com/docs/react-testing-library/intro/), `jest-environment-jsdom`. Tests live under **`tests/`** and apply coverage to **`src/**/*.{ts,tsx}`**.
@@ -45,8 +46,10 @@ The project follows a standard Next.js App Router structure. The separation of c
 │   │   ├── page.tsx      # Root page showcasing latest posts or general info.
 │   │   ├── about/        # About page route.
 │   │   ├── api/
+│   │   │   ├── games/         # OpenAI game HTML generation + generated-image proxy.
 │   │   │   └── magic-canvas/  # fal.ai generation endpoint + generated-image download proxy.
 │   │   ├── canvas/       # Magic Canvas page route.
+│   │   ├── game/         # AI Game Creator route.
 │   │   ├── gallery/      # Gallery browsing/upload route.
 │   │   ├── posts/        # Blog post listing and individual post routes (/posts/[slug]).
 │   │   ├── profile/      # Account profile route.
@@ -54,10 +57,12 @@ The project follows a standard Next.js App Router structure. The separation of c
 │   │   ├── signup/       # Sign-up route.
 │   │   └── tags/         # Tag listing and tag-specific post routes (/tags/[tag]).
 │   ├── components/       # Reusable React components.
+│   │   ├── game/              # AI Game Creator chat, result card, modal preview, submit flow.
 │   │   ├── MagicCanvas.tsx    # Canvas drawing UI, fal status UI, preview, and download.
 │   │   ├── MDXContent.tsx# Core component mapping MDX elements to React components.
 │   │   └── ...           # Structural (Header, Footer) and specific MDX components (Callout, CodeBlock, etc.).
 │   └── lib/              # Core business and data-fetching logic.
+│       ├── gameCreator/  # Vendored webjs-game-creator skill prompt used in production.
 │       ├── posts.ts      # Functions to read the file system, parse markdown, and fetch posts.
 │       └── types.ts      # TypeScript interfaces defining Post and Frontmatter shapes.
 └── package.json          # Project dependencies and operational scripts.
@@ -160,3 +165,43 @@ Magic Canvas is a dedicated drawing and style-transfer route at **`/canvas`**.
 *   **Canvas tests**: `tests/components/MagicCanvas.test.tsx` covers controls, auth gating, streaming generation request payloads, Convex save flow, preview behavior, and proxied download behavior. `tests/app/magicCanvasRoute.test.ts` covers route validation, fal upload/subscribe payloads, SSE output, and download proxy headers.
 *   **Artifacts**: each `npm test` run produces a timestamped Markdown report and refreshes `test_reports/coverage/` (see [README.md — Testing](./README.md#testing)).
 *   **CI**: Pull requests targeting **`main`** run Jest on GitHub Actions with the same report layout uploaded as artifacts; behavior is detailed under **[Continuous integration (GitHub Actions)](#continuous-integration-github-actions)** above.
+
+### 7. AI Game Creator workflow
+
+AI Game Creator is a browser-game generation and publishing flow at **`/game`**.
+
+*   **UI route**: `src/app/game/page.tsx` renders `src/components/game/AiGameCreator.tsx`.
+*   **Navigation**: `src/components/Header.tsx` exposes the route as `game` in desktop and mobile nav.
+*   **Initial page**:
+    *   Shows a ChatGPT-style prompt input.
+    *   Lists published games from Convex in a fixed-size responsive card grid.
+    *   Each card shows name, intro image, creation time, like count, and preview/open controls.
+*   **Conversation page**:
+    *   Submitting a prompt switches to chat mode.
+    *   User messages render on the right; assistant messages render on the left.
+    *   Assistant responses include user-visible generation steps, the OpenAI model, the vendored skill path, and verification status. Hidden chain-of-thought is not exposed.
+    *   After generation, the result card includes the intro image, generated filename, preview, submit, save-HTML controls, and an expandable design document.
+    *   Additional prompts after the first generation pass the previous HTML back to the server so OpenAI can edit the current draft.
+*   **Game generation API**: `src/app/api/games/generate/route.ts`
+    *   Reads the vendored skill prompt from `src/lib/gameCreator/webjs-game-creator-skill.md`. This avoids depending on local Codex paths such as `/Users/.../.codex/skills`, so the route works on Vercel.
+    *   Calls the OpenAI Responses API with `OPENAI_API_KEY`.
+    *   Uses `OPENAI_GAME_MODEL` when set, then `OPENAI_MODEL`, then defaults to `gpt-4.1-mini`.
+    *   Requires structured JSON output containing game name, filename, complete HTML, design document, visible process steps, and a `PASS` or `FAIL` verification conclusion.
+    *   Validates that the returned HTML looks like a full document and contains embedded `<style>` and `<script>` blocks.
+    *   Adds prompt requirements that generated pages fit inside iframe/mobile/desktop viewports and avoid clipped fixed layouts.
+*   **Intro image generation**:
+    *   The same route uses fal.ai model `fal-ai/flux/schnell` to generate a game intro image from the prompt and generated game name.
+    *   Credentials come from server-only `FAL_KEY` or `FAL_API_KEY`.
+    *   If fal credentials are absent, the route returns a generated SVG data URL placeholder so local game generation can still be tested.
+    *   `src/app/api/games/image/route.ts` downloads/proxies either remote fal images or data URL images so the browser can upload a blob to Convex storage.
+*   **Preview**:
+    *   Draft and published games preview in an in-page modal using an iframe with `sandbox="allow-scripts"`.
+    *   The preview modal uses a fixed 16:9 stage inside a larger scrollable shell to reduce clipping when generated games use their own viewport assumptions.
+*   **Convex persistence**:
+    *   `convex/schema.ts` defines `games` with `userId`, `name`, `prompt`, `htmlId`, `imageId`, `createdAt`, and `likes`.
+    *   `convex/games.ts` exposes `listPublished`, authenticated `generateUploadUrl`, authenticated `createGame`, and `like`.
+    *   Published HTML and intro images are stored as Convex storage objects. The database record stores only metadata and storage ids.
+    *   Deploy schema/function changes with `npx convex deploy` before relying on production publishing.
+*   **Production environment**:
+    *   Next.js host: `OPENAI_API_KEY`, optional `OPENAI_GAME_MODEL`, and `FAL_KEY` or `FAL_API_KEY`.
+    *   Convex deployment: same auth variables documented in README, plus deployed `games` schema/functions.

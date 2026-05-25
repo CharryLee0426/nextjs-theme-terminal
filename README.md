@@ -16,6 +16,7 @@ A modern, retro terminal-inspired blog theme built with Next.js 15, featuring MD
 - 🔍 **SEO Friendly** - Proper meta tags, structured data, and sitemap generation
 - 🌙 **Terminal Color Schemes** - Customizable themes inspired by classic terminal emulators
 - 🪄 **Magic Canvas** - Signed-in users can draw on `/canvas`, transform sketches with fal.ai image-to-image generation, and save results to Convex with metadata
+- 🎮 **AI Game Creator** - Generate single-file browser mini games on `/game` with the OpenAI API, create intro images with fal.ai, preview/edit games in chat, and publish them to Convex storage
 - 🖼️ **Gallery & Accounts** - Gallery browsing/upload flows plus Convex-backed sign-in, sign-up, profile, and password reset
 - 🚀 **Modern Stack** - TypeScript, Tailwind CSS, and cutting-edge web technologies
 - 🧪 **Unit tests** - [Jest](https://jestjs.io/) with [Testing Library](https://testing-library.com/); coverage and Markdown reports (see [Testing](#testing))
@@ -35,8 +36,10 @@ terminal-theme-nextjs/
 ├── src/
 │   ├── app/                   # Next.js App Router
 │   │   ├── about/             # About page
+│   │   ├── api/games/         # OpenAI game generation + intro image proxy
 │   │   ├── api/magic-canvas/  # fal.ai image generation + download proxy
 │   │   ├── canvas/            # Magic Canvas drawing and style-transfer page
+│   │   ├── game/              # AI Game Creator page
 │   │   ├── gallery/           # Gallery page
 │   │   ├── posts/             # Dynamic post routes
 │   │   ├── profile/           # Account profile page
@@ -51,10 +54,12 @@ terminal-theme-nextjs/
 │   │   ├── Header.tsx         # Terminal-style navigation
 │   │   ├── Footer.tsx         # Site footer
 │   │   ├── MagicCanvas.tsx    # Sketch canvas, generation UI, preview, download
+│   │   ├── game/              # AI Game Creator chat, cards, preview, submit UI
 │   │   ├── MDXContent.tsx     # MDX content renderer
 │   │   ├── PostCard.tsx       # Blog post preview cards
 │   │   └── *.tsx              # Other UI components
-│   └── lib/                   # Utility functions and types
+│   └── lib/                   # Utility functions, prompts, and types
+│       ├── gameCreator/       # Vendored webjs-game-creator skill prompt
 │       ├── posts.ts           # Post management utilities
 │       └── types.ts           # TypeScript type definitions
 ├── .github/
@@ -91,6 +96,7 @@ terminal-theme-nextjs/
 - **[rehype-highlight](https://github.com/rehypejs/rehype-highlight)** - Syntax highlighting
 
 ### Utilities
+- **[OpenAI API](https://platform.openai.com/docs/)** - Generates self-contained HTML/CSS/JS mini games for AI Game Creator
 - **[@fal-ai/client](https://fal.ai/)** - fal.ai image generation client for Magic Canvas
 - **[date-fns](https://date-fns.org/)** - Date manipulation
 - **[reading-time](https://github.com/ngryman/reading-time)** - Reading time estimation
@@ -156,6 +162,35 @@ After generation succeeds, the client stores the generated image in Convex stora
 - Convex storage id for the generated image
 
 Deploy the Convex schema/functions before using this in production:
+
+```bash
+npx convex deploy
+```
+
+### AI Game Creator setup
+
+The `/game` page lets users describe a browser mini game, opens a ChatGPT-style conversation, and calls the server route at `src/app/api/games/generate/route.ts`. The route reads the vendored skill prompt from `src/lib/gameCreator/webjs-game-creator-skill.md`, sends it with the user prompt to the OpenAI Responses API, and expects a complete single-file HTML game plus design and verification metadata.
+
+After the HTML is generated, the same route asks fal.ai for a game intro image. If fal credentials are missing, it falls back to a generated SVG placeholder so local development can still exercise the flow. Users can preview the game in an iframe modal, ask for edits in chat, and submit the final HTML plus intro image to Convex storage.
+
+Add these variables to `.env.local` for local development and to your production host for deployment:
+
+```bash
+OPENAI_API_KEY=your-openai-api-key
+OPENAI_GAME_MODEL=gpt-4.1-mini # optional; defaults to gpt-4.1-mini
+FAL_KEY=your-fal-key           # or FAL_API_KEY
+```
+
+Published game metadata is stored in the Convex `games` table and points to two Convex storage objects:
+
+- generated HTML file
+- intro image
+- game name
+- source prompt
+- creation time
+- like count
+
+Deploy the Convex schema/functions before using game publishing in production:
 
 ```bash
 npx convex deploy
@@ -397,6 +432,7 @@ After changing Convex env vars, restart `npx convex dev` if it is running.
    - On Convex **production**, set `JWT_PRIVATE_KEY` and `JWKS` (same section), and deploy the latest Convex schema/functions with `npx convex deploy` so Magic Canvas can write `canvasImages`.
    - For **forgot password**, add `NEXT_PUBLIC_TURNSTILE_SITE_KEY` on Vercel and `TURNSTILE_SECRET_KEY` on Convex **production** (see [Cloudflare Turnstile](#cloudflare-turnstile-forgot-password)).
    - For **Magic Canvas**, add `FAL_KEY` or `FAL_API_KEY` on the Next.js host. This value must stay server-side and must not be prefixed with `NEXT_PUBLIC_`.
+   - For **AI Game Creator**, add `OPENAI_API_KEY` on the Next.js host. Optionally add `OPENAI_GAME_MODEL` to choose the model used for game HTML generation. Keep these values server-side and do not use `NEXT_PUBLIC_`.
    - Redeploy after changing env vars.
 
 ### Build Configuration
