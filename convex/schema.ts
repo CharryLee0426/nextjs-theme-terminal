@@ -38,4 +38,13 @@ export default defineSchema({
   })
     .index("by_user_createdAt", ["userId", "createdAt"])
     .index("by_createdAt", ["createdAt"]),
+  games: defineTable({
+    userId: v.id("users"),
+    name: v.string(),
+    prompt: v.string(),
+    htmlId: v.id("_storage"),
+    imageId: v.id("_storage"),
+    createdAt: v.number(),
+    likes: v.number(),
+  }).index("by_createdAt", ["createdAt"]),
 });

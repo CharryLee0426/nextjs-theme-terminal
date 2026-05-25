@@ -16,6 +16,7 @@
 - 🔍 **SEO** — 合理的 meta 与结构化内容
 - 🌙 **终端配色变量** — 灵感来自经典终端模拟器
 - 🪄 **Magic Canvas** — 登录用户可在 `/canvas` 上绘制草图、通过 fal.ai 做图生图风格转换，并将结果及元数据保存到 Convex
+- 🎮 **AI Game Creator** — 在 `/game` 使用 OpenAI API 生成单文件浏览器小游戏，用 fal.ai 生成介绍图，在聊天中预览 / 编辑，并发布到 Convex storage
 - 🖼️ **Gallery 与账号系统** — Gallery 浏览 / 上传流程，以及 Convex 驱动的登录、注册、个人资料与密码重置
 - 🚀 **现代技术栈** — TypeScript、Tailwind CSS 等
 - 🧪 **单元测试** — [Jest](https://jestjs.io/) + [Testing Library](https://testing-library.com/)，覆盖率与 Markdown 报告（见 [测试](#测试)）
@@ -36,8 +37,10 @@ terminal-theme-nextjs/
 ├── src/
 │   ├── app/                   # Next.js App Router
 │   │   ├── about/             # 关于页
+│   │   ├── api/games/         # OpenAI 游戏生成与介绍图代理
 │   │   ├── api/magic-canvas/  # fal.ai 图像生成与下载代理
 │   │   ├── canvas/            # Magic Canvas 绘图与风格转换页
+│   │   ├── game/              # AI Game Creator 页面
 │   │   ├── gallery/           # Gallery 页面
 │   │   ├── posts/             # 动态文章路由
 │   │   ├── profile/           # 账号资料页
@@ -52,10 +55,12 @@ terminal-theme-nextjs/
 │   │   ├── Header.tsx         # 终端风导航
 │   │   ├── Footer.tsx         # 页脚
 │   │   ├── MagicCanvas.tsx    # 草图画布、生成 UI、预览与下载
+│   │   ├── game/              # AI Game Creator 聊天、卡片、预览与提交 UI
 │   │   ├── MDXContent.tsx     # MDX 渲染
 │   │   ├── PostCard.tsx       # 文章卡片
 │   │   └── *.tsx              # 其他 UI
-│   └── lib/                   # 工具与类型
+│   └── lib/                   # 工具、提示词与类型
+│       ├── gameCreator/       # 内置 webjs-game-creator skill prompt
 │       ├── posts.ts           # 文章读取等
 │       └── types.ts           # TypeScript 类型
 ├── .github/
@@ -96,6 +101,7 @@ terminal-theme-nextjs/
 
 ### 工具库
 
+- **[OpenAI API](https://platform.openai.com/docs/)** — AI Game Creator 用于生成自包含 HTML/CSS/JS 小游戏
 - **[@fal-ai/client](https://fal.ai/)** — Magic Canvas 使用的 fal.ai 图像生成客户端
 - **[date-fns](https://date-fns.org/)** — 日期处理
 - **[reading-time](https://github.com/ngryman/reading-time)** — 阅读时长估算
@@ -164,6 +170,35 @@ FAL_API_KEY=your-fal-key
 - 生成图的 Convex storage id
 
 生产环境使用前，请先部署 Convex schema / functions：
+
+```bash
+npx convex deploy
+```
+
+### AI Game Creator 配置
+
+`/game` 页面允许用户描述一个浏览器小游戏，进入类似 ChatGPT 的对话页，并调用服务端路由 `src/app/api/games/generate/route.ts`。该路由会读取仓库内置的 skill prompt：`src/lib/gameCreator/webjs-game-creator-skill.md`，与用户提示词一起发送给 OpenAI Responses API，并要求返回完整的单文件 HTML 游戏、设计文档与验证信息。
+
+HTML 生成完成后，同一路由会使用 fal.ai 生成游戏介绍图。若未配置 fal 凭据，本地开发会退回到生成 SVG 占位图，方便继续联调流程。用户可以在 iframe 弹窗中预览游戏，在聊天中继续要求修改，并将最终 HTML 与介绍图提交到 Convex storage。
+
+本地开发时，在 `.env.local` 中加入以下变量；生产部署时也需要在 Next.js 托管平台设置：
+
+```bash
+OPENAI_API_KEY=your-openai-api-key
+OPENAI_GAME_MODEL=gpt-4.1-mini # 可选；默认 gpt-4.1-mini
+FAL_KEY=your-fal-key           # 或 FAL_API_KEY
+```
+
+已发布游戏的元数据存储在 Convex 的 `games` 表中，并指向两个 Convex storage 对象：
+
+- 生成的 HTML 文件
+- 游戏介绍图
+- 游戏名称
+- 原始提示词
+- 创建时间
+- 点赞数
+
+生产环境使用游戏发布前，请先部署 Convex schema / functions：
 
 ```bash
 npx convex deploy
@@ -414,6 +449,7 @@ npx convex env set --prod TURNSTILE_SECRET_KEY "你的-secret"
    - 在 Convex **生产** 部署上设置 `JWT_PRIVATE_KEY` 与 `JWKS`（同上），并执行 `npx convex deploy` 部署最新 Convex schema / functions，确保 Magic Canvas 可以写入 `canvasImages`。  
    - **忘记密码**：在 Vercel 配置 `NEXT_PUBLIC_TURNSTILE_SITE_KEY`，在 Convex **生产** 部署配置 `TURNSTILE_SECRET_KEY`（详见 [Cloudflare Turnstile](#cloudflare-turnstile-forgot-password)）。  
    - **Magic Canvas**：在 Next.js 托管平台配置 `FAL_KEY` 或 `FAL_API_KEY`。该值必须保留在服务端，不能加 `NEXT_PUBLIC_` 前缀。  
+   - **AI Game Creator**：在 Next.js 托管平台配置 `OPENAI_API_KEY`。可选配置 `OPENAI_GAME_MODEL` 来指定游戏 HTML 生成模型。该值必须保留在服务端，不能加 `NEXT_PUBLIC_` 前缀。  
    - 修改环境变量后重新部署。  
 
 ### 构建说明
