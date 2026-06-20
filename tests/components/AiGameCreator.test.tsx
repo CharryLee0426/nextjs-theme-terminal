@@ -1,0 +1,211 @@
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { TextDecoder as NodeTextDecoder, TextEncoder as NodeTextEncoder } from "util";
+import { AiGameCreator } from "@/components/game/AiGameCreator";
+import { ToastProvider } from "@/components/ToastProvider";
+
+const mockUseConvexAuth = jest.fn();
+const mockUseQuery = jest.fn();
+const mockUseMutation = jest.fn();
+const mockLikeGame = jest.fn();
+const mockGenerateUploadUrl = jest.fn();
+const mockCreateGame = jest.fn();
+
+jest.mock("convex/react", () => ({
+  useConvexAuth: () => mockUseConvexAuth(),
+  useMutation: (...args: unknown[]) => mockUseMutation(...args),
+  useQuery: (...args: unknown[]) => mockUseQuery(...args),
+}));
+
+function ndjsonResponse(events: unknown[]) {
+  const chunks = events.map((event) => new TextEncoder().encode(`${JSON.stringify(event)}\n`));
+  return {
+    ok: true,
+    body: {
+      getReader: () => ({
+        read: jest.fn(async () => {
+          const value = chunks.shift();
+          return value ? { done: false, value } : { done: true, value: undefined };
+        }),
+      }),
+    },
+    json: jest.fn(),
+  };
+}
+
+function controlledNdjsonResponse(progressEvents: unknown[], finalEvents: unknown[]) {
+  const progressChunks = progressEvents.map((event) =>
+    new TextEncoder().encode(`${JSON.stringify(event)}\n`),
+  );
+  const finalChunks = finalEvents.map((event) =>
+    new TextEncoder().encode(`${JSON.stringify(event)}\n`),
+  );
+  let releaseFinalEvents!: () => void;
+  const finalEventsReleased = new Promise<void>((resolve) => {
+    releaseFinalEvents = resolve;
+  });
+
+  return {
+    response: {
+      ok: true,
+      body: {
+        getReader: () => ({
+          read: jest.fn(async () => {
+            const progressValue = progressChunks.shift();
+            if (progressValue) return { done: false, value: progressValue };
+
+            await finalEventsReleased;
+            const finalValue = finalChunks.shift();
+            return finalValue
+              ? { done: false, value: finalValue }
+              : { done: true, value: undefined };
+          }),
+        }),
+      },
+      json: jest.fn(),
+    },
+    releaseFinalEvents,
+  };
+}
+
+function renderGameCreator() {
+  return render(
+    <ToastProvider>
+      <AiGameCreator />
+    </ToastProvider>,
+  );
+}
+
+beforeAll(() => {
+  if (typeof TextEncoder === "undefined") {
+    global.TextEncoder = NodeTextEncoder as typeof TextEncoder;
+  }
+  if (typeof TextDecoder === "undefined") {
+    global.TextDecoder = NodeTextDecoder as typeof TextDecoder;
+  }
+});
+
+describe("AiGameCreator", () => {
+  const originalFetch = global.fetch;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    global.fetch = jest.fn();
+    mockUseConvexAuth.mockReturnValue({ isLoading: false, isAuthenticated: true });
+    mockUseQuery.mockReturnValue([]);
+    mockUseMutation
+      .mockReturnValueOnce(mockLikeGame)
+      .mockReturnValueOnce(mockGenerateUploadUrl)
+      .mockReturnValueOnce(mockCreateGame);
+  });
+
+  afterAll(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("requests streamed game generation and renders agent progress", async () => {
+    const stream = controlledNdjsonResponse(
+      [
+        { type: "progress", event: "planner:start", details: { agent: "HTML Minigame Planner" } },
+        {
+          type: "progress",
+          event: "planner:complete",
+          details: {
+            gameName: "Test Runner",
+            analysisFileName: "test-runner_analysis.md",
+            fileName: "test-runner.html",
+          },
+        },
+        {
+          type: "progress",
+          event: "builder:visibleProcess",
+          details: { step: "Built a responsive canvas loop" },
+        },
+        {
+          type: "progress",
+          event: "verifier:complete",
+          details: {
+            verificationConclusion: "PASS",
+            verificationReasons: ["Standalone HTML"],
+          },
+        },
+      ],
+      [
+        {
+          type: "complete",
+          draft: {
+            gameName: "Test Runner",
+            slug: "test-runner",
+            fileName: "test-runner.html",
+            analysisFileName: "test-runner_analysis.md",
+            analysisMarkdown: "# Test Runner\n\nDesign notes",
+            html: "<!DOCTYPE html><html><body><script></script></body></html>",
+            imageUrl: "data:image/svg+xml,test",
+            imageSource: "fallback",
+            imageNote: "Fallback image used.",
+            prompt: "",
+            visibleProcess: ["Planned controls", "Built canvas loop"],
+            verificationConclusion: "PASS",
+            verificationReasons: ["Standalone HTML"],
+            skillPath: "src/lib/gameCreator/html-minigame/SKILL.md",
+            openAiModel: "gpt-5.4-mini",
+          },
+        },
+      ],
+    );
+    (global.fetch as jest.Mock).mockResolvedValueOnce(stream.response);
+
+    renderGameCreator();
+
+    fireEvent.change(screen.getByLabelText("Game prompt"), {
+      target: { value: "make a runner" },
+    });
+    fireEvent.click(screen.getByLabelText("Generate game"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Planning game design")).toBeInTheDocument();
+    });
+    expect(screen.getByText("Built a responsive canvas loop")).toBeInTheDocument();
+
+    stream.releaseFinalEvents();
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Test Runner" })).toBeInTheDocument();
+    });
+    expect(screen.getByText("test-runner_analysis.md + test-runner.html")).toBeInTheDocument();
+    expect(screen.getByText("Generated Test Runner. Fallback image used.")).toBeInTheDocument();
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      "/api/games/generate",
+      expect.objectContaining({
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: expect.any(String),
+      }),
+    );
+    expect(JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body)).toMatchObject({
+      prompt: "make a runner",
+      stream: true,
+    });
+  });
+
+  it("surfaces streamed generation errors in the conversation", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(
+      ndjsonResponse([
+        { type: "progress", event: "planner:start", details: {} },
+        { type: "error", error: "agent failed" },
+      ]),
+    );
+
+    renderGameCreator();
+
+    fireEvent.change(screen.getByLabelText("Game prompt"), {
+      target: { value: "make a runner" },
+    });
+    fireEvent.click(screen.getByLabelText("Generate game"));
+
+    await waitFor(() => {
+      expect(screen.getAllByText("agent failed").length).toBeGreaterThan(0);
+    });
+    expect(screen.queryByRole("heading", { name: "Test Runner" })).not.toBeInTheDocument();
+  });
+});
