@@ -7,7 +7,10 @@ import { generateGameWithAgents } from "@/lib/gameCreator/agents";
 type GameGenerateRequest = {
   prompt?: string;
   previousHtml?: string;
+  stream?: boolean;
 };
+
+type GenerationLogger = (event: string, details?: Record<string, unknown>) => void;
 
 const SKILL_PATH = path.join(
   process.cwd(),
@@ -35,6 +38,27 @@ function createGenerationLogger() {
         ...details,
       }),
     );
+  };
+}
+
+function writeStreamEvent(
+  controller: ReadableStreamDefaultController<Uint8Array>,
+  event: unknown,
+) {
+  controller.enqueue(new TextEncoder().encode(`${JSON.stringify(event)}\n`));
+}
+
+function createStreamingLogger(
+  controller: ReadableStreamDefaultController<Uint8Array>,
+  consoleLogger: GenerationLogger,
+): GenerationLogger {
+  return (event, details = {}) => {
+    consoleLogger(event, details);
+    writeStreamEvent(controller, {
+      type: "progress",
+      event,
+      details,
+    });
   };
 }
 
@@ -117,6 +141,74 @@ async function generateIntroImage(prompt: string, gameName: string) {
   return { imageUrl, source: "fal.ai", note: null };
 }
 
+async function createGameDraft({
+  prompt,
+  previousHtml,
+  logAgent,
+}: {
+  prompt: string;
+  previousHtml?: string;
+  logAgent: GenerationLogger;
+}) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    logAgent("request:error", { error: "Missing OPENAI_API_KEY environment variable." });
+    throw new Error("Missing OPENAI_API_KEY environment variable.");
+  }
+
+  logAgent("skill:load:start", {
+    skillPath: SKILL_DISPLAY_PATH,
+    analysisTemplatePath: "src/lib/gameCreator/html-minigame/reference/analysis-template.md",
+  });
+  const [skill, analysisTemplate] = await Promise.all([
+    readFile(SKILL_PATH, "utf8"),
+    readFile(ANALYSIS_TEMPLATE_PATH, "utf8"),
+  ]);
+  if (!skill.includes("Output contract") || !skill.includes("<slug>_analysis.md")) {
+    logAgent("skill:load:error", { error: "Malformed html-minigame skill." });
+    throw new Error("html-minigame skill is not available or is malformed.");
+  }
+  logAgent("skill:load:complete", {
+    skillChars: skill.length,
+    analysisTemplateChars: analysisTemplate.length,
+  });
+
+  const draft = await generateGameWithAgents({
+    apiKey,
+    model: OPENAI_MODEL,
+    prompt,
+    skill,
+    analysisTemplate,
+    previousHtml,
+    logger: logAgent,
+  });
+  logAgent("cover:start", {
+    gameName: draft.gameName,
+    provider: process.env.FAL_KEY || process.env.FAL_API_KEY ? "fal.ai" : "fallback",
+  });
+  const intro = await generateIntroImage(prompt, draft.gameName);
+  logAgent("cover:complete", {
+    gameName: draft.gameName,
+    source: intro.source,
+    note: intro.note,
+  });
+
+  logAgent("response:success", {
+    gameName: draft.gameName,
+    files: [draft.analysisFileName, draft.fileName],
+    verificationConclusion: draft.verificationConclusion,
+  });
+
+  return {
+    ...draft,
+    imageUrl: intro.imageUrl,
+    imageSource: intro.source,
+    imageNote: intro.note,
+    skillPath: SKILL_DISPLAY_PATH,
+    openAiModel: OPENAI_MODEL,
+  };
+}
+
 export async function POST(request: Request) {
   const logAgent = createGenerationLogger();
   try {
@@ -130,62 +222,53 @@ export async function POST(request: Request) {
       hasPreviousHtml: Boolean(body.previousHtml),
     });
 
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      logAgent("request:error", { error: "Missing OPENAI_API_KEY environment variable." });
-      return jsonError("Missing OPENAI_API_KEY environment variable.", 500);
+    if (body.stream) {
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          async start(controller) {
+            const streamLogger = createStreamingLogger(controller, logAgent);
+            try {
+              streamLogger("stream:start", {
+                promptLength: prompt.length,
+                hasPreviousHtml: Boolean(body.previousHtml),
+              });
+              const payload = await createGameDraft({
+                prompt,
+                previousHtml: body.previousHtml,
+                logAgent: streamLogger,
+              });
+              writeStreamEvent(controller, {
+                type: "complete",
+                draft: payload,
+              });
+            } catch (error) {
+              const message = error instanceof Error ? error.message : "Game generation failed.";
+              streamLogger("request:error", { error: message });
+              writeStreamEvent(controller, {
+                type: "error",
+                error: message,
+              });
+            } finally {
+              controller.close();
+            }
+          },
+        }),
+        {
+          headers: {
+            "Content-Type": "application/x-ndjson; charset=utf-8",
+            "Cache-Control": "no-cache, no-transform",
+            "X-Content-Type-Options": "nosniff",
+          },
+        },
+      );
     }
 
-    logAgent("skill:load:start", {
-      skillPath: SKILL_DISPLAY_PATH,
-      analysisTemplatePath: "src/lib/gameCreator/html-minigame/reference/analysis-template.md",
-    });
-    const [skill, analysisTemplate] = await Promise.all([
-      readFile(SKILL_PATH, "utf8"),
-      readFile(ANALYSIS_TEMPLATE_PATH, "utf8"),
-    ]);
-    if (!skill.includes("Output contract") || !skill.includes("<slug>_analysis.md")) {
-      logAgent("skill:load:error", { error: "Malformed html-minigame skill." });
-      return jsonError("html-minigame skill is not available or is malformed.", 500);
-    }
-    logAgent("skill:load:complete", {
-      skillChars: skill.length,
-      analysisTemplateChars: analysisTemplate.length,
-    });
-
-    const draft = await generateGameWithAgents({
-      apiKey,
-      model: OPENAI_MODEL,
+    const payload = await createGameDraft({
       prompt,
-      skill,
-      analysisTemplate,
       previousHtml: body.previousHtml,
-      logger: logAgent,
+      logAgent,
     });
-    logAgent("cover:start", {
-      gameName: draft.gameName,
-      provider: process.env.FAL_KEY || process.env.FAL_API_KEY ? "fal.ai" : "fallback",
-    });
-    const intro = await generateIntroImage(prompt, draft.gameName);
-    logAgent("cover:complete", {
-      gameName: draft.gameName,
-      source: intro.source,
-      note: intro.note,
-    });
-
-    logAgent("response:success", {
-      gameName: draft.gameName,
-      files: [draft.analysisFileName, draft.fileName],
-      verificationConclusion: draft.verificationConclusion,
-    });
-    return NextResponse.json({
-      ...draft,
-      imageUrl: intro.imageUrl,
-      imageSource: intro.source,
-      imageNote: intro.note,
-      skillPath: SKILL_DISPLAY_PATH,
-      openAiModel: OPENAI_MODEL,
-    });
+    return NextResponse.json(payload);
   } catch (error) {
     logAgent("request:error", {
       error: error instanceof Error ? error.message : "Game generation failed.",
