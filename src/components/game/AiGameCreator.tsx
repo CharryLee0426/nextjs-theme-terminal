@@ -27,13 +27,15 @@ type ChatMessage = {
 
 type DraftGame = {
   gameName: string;
+  slug: string;
   fileName: string;
+  analysisFileName: string;
+  analysisMarkdown: string;
   html: string;
   imageUrl: string;
   imageSource: string;
   imageNote?: string | null;
   prompt: string;
-  designDocument: Record<string, string>;
   visibleProcess: string[];
   verificationConclusion: "PASS" | "FAIL";
   verificationReasons: string[];
@@ -48,15 +50,14 @@ type PublishedGame = {
   createdAt: number;
   likes: number;
   htmlUrl: string | null;
+  analysisUrl?: string | null;
+  htmlFileName?: string;
+  analysisFileName?: string;
   imageUrl: string | null;
 };
 
 function makeId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function dataUrlToBlobUrl(html: string) {
-  return URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
 }
 
 export function AiGameCreator() {
@@ -139,13 +140,15 @@ export function AiGameCreator() {
 
       const nextDraft: DraftGame = {
         gameName: payload.gameName,
+        slug: payload.slug,
         fileName: payload.fileName,
+        analysisFileName: payload.analysisFileName,
+        analysisMarkdown: payload.analysisMarkdown,
         html: payload.html,
         imageUrl: payload.imageUrl,
         imageSource: payload.imageSource,
         imageNote: payload.imageNote,
         prompt: nextPrompt,
-        designDocument: payload.designDocument,
         visibleProcess: payload.visibleProcess,
         verificationConclusion: payload.verificationConclusion,
         verificationReasons: payload.verificationReasons,
@@ -205,6 +208,8 @@ export function AiGameCreator() {
     try {
       const htmlBlob = new Blob([draft.html], { type: "text/html;charset=utf-8" });
       const htmlId = await uploadBlob(htmlBlob, "text/html;charset=utf-8");
+      const analysisBlob = new Blob([draft.analysisMarkdown], { type: "text/markdown;charset=utf-8" });
+      const analysisId = await uploadBlob(analysisBlob, "text/markdown;charset=utf-8");
 
       let imageBlob: Blob;
       if (submitImageFile) {
@@ -221,8 +226,12 @@ export function AiGameCreator() {
 
       await createGame({
         name,
+        slug: draft.slug,
         prompt: draft.prompt,
         htmlId: htmlId as Id<"_storage">,
+        analysisId: analysisId as Id<"_storage">,
+        htmlFileName: draft.fileName,
+        analysisFileName: draft.analysisFileName,
         imageId: imageId as Id<"_storage">,
       });
 
@@ -256,17 +265,26 @@ export function AiGameCreator() {
     }
   };
 
-  const downloadDraft = () => {
-    if (!draft) return;
-    const objectUrl = dataUrlToBlobUrl(draft.html);
+  const downloadBlob = (content: string, fileName: string, contentType: string) => {
+    const objectUrl = URL.createObjectURL(new Blob([content], { type: contentType }));
     const link = document.createElement("a");
     link.href = objectUrl;
-    link.download = draft.fileName;
+    link.download = fileName;
     link.rel = "noopener";
     document.body.appendChild(link);
     link.click();
     link.remove();
     URL.revokeObjectURL(objectUrl);
+  };
+
+  const downloadDraftHtml = () => {
+    if (!draft) return;
+    downloadBlob(draft.html, draft.fileName, "text/html;charset=utf-8");
+  };
+
+  const downloadDraftAnalysis = () => {
+    if (!draft) return;
+    downloadBlob(draft.analysisMarkdown, draft.analysisFileName, "text/markdown;charset=utf-8");
   };
 
   const returnToGameHome = () => {
@@ -324,17 +342,10 @@ export function AiGameCreator() {
                   </div>
                   <div className="game-result-card__body">
                     <h2>{draft.gameName}</h2>
-                    <p>{draft.fileName}</p>
+                    <p>{draft.analysisFileName} + {draft.fileName}</p>
                     <details className="game-result-card__details">
-                      <summary>Design document</summary>
-                      <dl>
-                        {Object.entries(draft.designDocument).map(([key, value]) => (
-                          <div key={key}>
-                            <dt>{key}</dt>
-                            <dd>{value}</dd>
-                          </div>
-                        ))}
-                      </dl>
+                      <summary>Analysis markdown</summary>
+                      <pre>{draft.analysisMarkdown}</pre>
                     </details>
                     <div className="game-result-card__actions">
                       <button type="button" onClick={() => setPreviewHtml(draft.html)}>
@@ -343,7 +354,10 @@ export function AiGameCreator() {
                       <button type="button" onClick={() => setSubmitOpen(true)} disabled={!canSubmit}>
                         Submit
                       </button>
-                      <button type="button" onClick={downloadDraft}>
+                      <button type="button" onClick={downloadDraftAnalysis}>
+                        Save MD
+                      </button>
+                      <button type="button" onClick={downloadDraftHtml}>
                         Save HTML
                       </button>
                     </div>
@@ -426,6 +440,11 @@ export function AiGameCreator() {
                       {game.htmlUrl && (
                         <Link href={game.htmlUrl} target="_blank" rel="noopener">
                           <ExternalLink size={16} />
+                        </Link>
+                      )}
+                      {game.analysisUrl && (
+                        <Link href={game.analysisUrl} target="_blank" rel="noopener" title={game.analysisFileName || "Analysis"}>
+                          MD
                         </Link>
                       )}
                     </div>

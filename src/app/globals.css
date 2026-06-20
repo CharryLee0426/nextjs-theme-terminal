@@ -2837,27 +2837,15 @@ a:hover {
   margin-bottom: 8px;
 }
 
-.game-result-card__details dl {
+.game-result-card__details pre {
   max-height: 170px;
   overflow: auto;
   margin: 0;
   padding-right: 6px;
-}
-
-.game-result-card__details div {
-  display: grid;
-  gap: 2px;
-  margin-bottom: 8px;
-}
-
-.game-result-card__details dt {
-  color: var(--accent);
-  font-weight: 700;
-}
-
-.game-result-card__details dd {
-  margin: 0;
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
+  font: inherit;
+  line-height: 1.45;
 }
 
 .game-result-card__actions {

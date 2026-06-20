@@ -19,6 +19,9 @@ export const listPublished = query({
         createdAt: game.createdAt,
         likes: game.likes,
         htmlUrl: await ctx.storage.getUrl(game.htmlId),
+        analysisUrl: game.analysisId ? await ctx.storage.getUrl(game.analysisId) : null,
+        htmlFileName: game.htmlFileName,
+        analysisFileName: game.analysisFileName,
         imageUrl: await ctx.storage.getUrl(game.imageId),
       })),
     );
@@ -39,8 +42,12 @@ export const generateUploadUrl = mutation({
 export const createGame = mutation({
   args: {
     name: v.string(),
+    slug: v.optional(v.string()),
     prompt: v.string(),
     htmlId: v.id("_storage"),
+    analysisId: v.optional(v.id("_storage")),
+    htmlFileName: v.optional(v.string()),
+    analysisFileName: v.optional(v.string()),
     imageId: v.id("_storage"),
   },
   handler: async (ctx, args) => {
@@ -57,8 +64,12 @@ export const createGame = mutation({
     return await ctx.db.insert("games", {
       userId,
       name,
+      slug: args.slug,
       prompt: args.prompt.trim(),
       htmlId: args.htmlId,
+      analysisId: args.analysisId,
+      htmlFileName: args.htmlFileName,
+      analysisFileName: args.analysisFileName,
       imageId: args.imageId,
       createdAt: Date.now(),
       likes: 0,
