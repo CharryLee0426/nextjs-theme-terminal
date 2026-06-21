@@ -3,9 +3,15 @@
  */
 
 import { POST } from "@/app/api/games/generate/route";
-import { generateGameWithAgents } from "@/lib/gameCreator/agents";
+import {
+  answerUnrelatedHarmlessQuestion,
+  classifyGameRequest,
+  generateGameWithAgents,
+} from "@/lib/gameCreator/agents";
 
 jest.mock("@/lib/gameCreator/agents", () => ({
+  answerUnrelatedHarmlessQuestion: jest.fn(),
+  classifyGameRequest: jest.fn(),
   generateGameWithAgents: jest.fn(),
 }));
 
@@ -19,6 +25,13 @@ jest.mock("@fal-ai/client", () => ({
 const mockedGenerateGameWithAgents = generateGameWithAgents as jest.MockedFunction<
   typeof generateGameWithAgents
 >;
+const mockedClassifyGameRequest = classifyGameRequest as jest.MockedFunction<
+  typeof classifyGameRequest
+>;
+const mockedAnswerUnrelatedHarmlessQuestion =
+  answerUnrelatedHarmlessQuestion as jest.MockedFunction<
+    typeof answerUnrelatedHarmlessQuestion
+  >;
 const originalEnv = process.env;
 const consoleInfoSpy = jest.spyOn(console, "info").mockImplementation(() => {});
 
@@ -51,6 +64,15 @@ describe("games generate API route", () => {
       FAL_KEY: "",
       FAL_API_KEY: "",
     };
+    mockedClassifyGameRequest.mockResolvedValue({
+      intent: "RELATED_WITHIN_CAPABILITY",
+      response: "",
+      visibleProcess: ["Classified as a feasible HTML/WebJS minigame request."],
+    });
+    mockedAnswerUnrelatedHarmlessQuestion.mockResolvedValue({
+      response: "I can give a brief answer. Would you like to turn this into a web game?",
+      visibleProcess: ["Answered the harmless question."],
+    });
     mockedGenerateGameWithAgents.mockImplementation(async (args) => {
       args.logger?.("planner:start", { agent: "HTML Minigame Planner" });
       args.logger?.("planner:complete", {
@@ -129,6 +151,97 @@ describe("games generate API route", () => {
           }),
         }),
       ]),
+    );
+  });
+
+  it("returns assistant replies without calling game generation for greetings", async () => {
+    mockedClassifyGameRequest.mockResolvedValueOnce({
+      intent: "GREETING",
+      response: "Hi! I can help you create HTML/CSS/JavaScript minigames.",
+      visibleProcess: ["Classified the message as a greeting."],
+    });
+
+    const response = await POST(makeRequest({ prompt: "Hi" }));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      generated: false,
+      intent: "GREETING",
+      message: "Hi! I can help you create HTML/CSS/JavaScript minigames.",
+      openAiModel: "gpt-4.1-mini",
+    });
+    expect(mockedGenerateGameWithAgents).not.toHaveBeenCalled();
+  });
+
+  it("streams assistant replies without a draft for downgradable requests", async () => {
+    mockedClassifyGameRequest.mockResolvedValueOnce({
+      intent: "RELATED_OUT_OF_CAPABILITY_DOWNGRADABLE",
+      response: "That full version is too large, but we can make a smaller 2D browser version.",
+      visibleProcess: ["Identified the request as game-related but too advanced."],
+    });
+
+    const response = await POST(makeRequest({ prompt: "Build a giant MMO", stream: true }));
+    const lines = (await response.text())
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+
+    expect(lines).toContainEqual(
+      expect.objectContaining({
+        type: "reply",
+        reply: expect.objectContaining({
+          generated: false,
+          intent: "RELATED_OUT_OF_CAPABILITY_DOWNGRADABLE",
+          message: "That full version is too large, but we can make a smaller 2D browser version.",
+        }),
+      }),
+    );
+    expect(mockedGenerateGameWithAgents).not.toHaveBeenCalled();
+  });
+
+  it("answers unrelated harmless prompts with the answer agent and skips generation", async () => {
+    mockedClassifyGameRequest.mockResolvedValueOnce({
+      intent: "UNRELATED_HARMLESS",
+      response: "",
+      visibleProcess: ["Classified as harmless but unrelated to game creation."],
+    });
+    mockedAnswerUnrelatedHarmlessQuestion.mockResolvedValueOnce({
+      response:
+        "Tomorrow's listed games are Team A vs Team B. Would you like to turn this into a small sports quiz game?",
+      visibleProcess: ["Searched for current schedule information."],
+    });
+
+    const response = await POST(
+      makeRequest({ prompt: "what are tomorrow's world cup games?", stream: true }),
+    );
+    const lines = (await response.text())
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+
+    expect(mockedAnswerUnrelatedHarmlessQuestion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apiKey: "test-openai-key",
+        model: "gpt-4.1-mini",
+        prompt: "what are tomorrow's world cup games?",
+        logger: expect.any(Function),
+      }),
+    );
+    expect(mockedGenerateGameWithAgents).not.toHaveBeenCalled();
+    expect(lines).toContainEqual(
+      expect.objectContaining({
+        type: "reply",
+        reply: expect.objectContaining({
+          generated: false,
+          intent: "UNRELATED_HARMLESS",
+          message:
+            "Tomorrow's listed games are Team A vs Team B. Would you like to turn this into a small sports quiz game?",
+          visibleProcess: [
+            "Classified as harmless but unrelated to game creation.",
+            "Searched for current schedule information.",
+          ],
+        }),
+      }),
     );
   });
 

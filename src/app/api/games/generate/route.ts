@@ -2,7 +2,12 @@ import { fal } from "@fal-ai/client";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
-import { generateGameWithAgents } from "@/lib/gameCreator/agents";
+import {
+  answerUnrelatedHarmlessQuestion,
+  classifyGameRequest,
+  generateGameWithAgents,
+  type GameRequestIntent,
+} from "@/lib/gameCreator/agents";
 
 type GameGenerateRequest = {
   prompt?: string;
@@ -11,6 +16,14 @@ type GameGenerateRequest = {
 };
 
 type GenerationLogger = (event: string, details?: Record<string, unknown>) => void;
+
+type AssistantReplyPayload = {
+  generated: false;
+  intent: GameRequestIntent;
+  message: string;
+  visibleProcess: string[];
+  openAiModel: string;
+};
 
 const SKILL_PATH = path.join(
   process.cwd(),
@@ -156,6 +169,44 @@ async function createGameDraft({
     throw new Error("Missing OPENAI_API_KEY environment variable.");
   }
 
+  const classification = await classifyGameRequest({
+    apiKey,
+    model: OPENAI_MODEL,
+    prompt,
+    previousHtml,
+    logger: logAgent,
+  });
+
+  if (classification.intent !== "RELATED_WITHIN_CAPABILITY") {
+    const answer =
+      classification.intent === "UNRELATED_HARMLESS"
+        ? await answerUnrelatedHarmlessQuestion({
+            apiKey,
+            model: OPENAI_MODEL,
+            prompt,
+            logger: logAgent,
+          })
+        : null;
+    const response = answer?.response || classification.response;
+    const visibleProcess = [
+      ...classification.visibleProcess,
+      ...(answer?.visibleProcess ?? []),
+    ];
+
+    logAgent("response:assistant_reply", {
+      intent: classification.intent,
+      messageLength: response.length,
+    });
+
+    return {
+      generated: false,
+      intent: classification.intent,
+      message: response,
+      visibleProcess,
+      openAiModel: OPENAI_MODEL,
+    } satisfies AssistantReplyPayload;
+  }
+
   logAgent("skill:load:start", {
     skillPath: SKILL_DISPLAY_PATH,
     analysisTemplatePath: "src/lib/gameCreator/html-minigame/reference/analysis-template.md",
@@ -200,6 +251,7 @@ async function createGameDraft({
   });
 
   return {
+    generated: true,
     ...draft,
     imageUrl: intro.imageUrl,
     imageSource: intro.source,
@@ -237,10 +289,17 @@ export async function POST(request: Request) {
                 previousHtml: body.previousHtml,
                 logAgent: streamLogger,
               });
-              writeStreamEvent(controller, {
-                type: "complete",
-                draft: payload,
-              });
+              if (payload.generated) {
+                writeStreamEvent(controller, {
+                  type: "complete",
+                  draft: payload,
+                });
+              } else {
+                writeStreamEvent(controller, {
+                  type: "reply",
+                  reply: payload,
+                });
+              }
             } catch (error) {
               const message = error instanceof Error ? error.message : "Game generation failed.";
               streamLogger("request:error", { error: message });

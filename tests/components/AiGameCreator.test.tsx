@@ -208,4 +208,39 @@ describe("AiGameCreator", () => {
     });
     expect(screen.queryByRole("heading", { name: "Test Runner" })).not.toBeInTheDocument();
   });
+
+  it("renders classified assistant replies without a generated game card", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(
+      ndjsonResponse([
+        { type: "progress", event: "intent:complete", details: { intent: "GREETING" } },
+        {
+          type: "reply",
+          reply: {
+            generated: false,
+            intent: "GREETING",
+            message:
+              "Hi! I can help you create browser-based HTML/CSS/JavaScript minigames.",
+            visibleProcess: ["Classified the message as a greeting."],
+            openAiModel: "gpt-5.4-mini",
+          },
+        },
+      ]),
+    );
+
+    renderGameCreator();
+
+    fireEvent.change(screen.getByLabelText("Game prompt"), {
+      target: { value: "Hi" },
+    });
+    fireEvent.click(screen.getByLabelText("Generate game"));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Hi! I can help you create browser-based HTML/CSS/JavaScript minigames."),
+      ).toBeInTheDocument();
+    });
+    expect(screen.queryByText("Intent: GREETING")).not.toBeInTheDocument();
+    expect(screen.queryByText("Classified the message as a greeting.")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Generated game result")).not.toBeInTheDocument();
+  });
 });

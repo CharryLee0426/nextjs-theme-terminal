@@ -26,6 +26,7 @@ type ChatMessage = {
 };
 
 type DraftGame = {
+  generated?: true;
   gameName: string;
   slug: string;
   fileName: string;
@@ -40,6 +41,14 @@ type DraftGame = {
   verificationConclusion: "PASS" | "FAIL";
   verificationReasons: string[];
   skillPath: string;
+  openAiModel: string;
+};
+
+type AssistantReply = {
+  generated: false;
+  intent: string;
+  message: string;
+  visibleProcess: string[];
   openAiModel: string;
 };
 
@@ -60,12 +69,17 @@ type AgentCompleteEvent = {
   draft: DraftGame;
 };
 
+type AgentReplyEvent = {
+  type: "reply";
+  reply: AssistantReply;
+};
+
 type AgentErrorEvent = {
   type: "error";
   error: string;
 };
 
-type AgentStreamEvent = AgentProgressEvent | AgentCompleteEvent | AgentErrorEvent;
+type AgentStreamEvent = AgentProgressEvent | AgentCompleteEvent | AgentReplyEvent | AgentErrorEvent;
 
 type PublishedGame = {
   _id: Id<"games">;
@@ -105,6 +119,16 @@ function formatAgentProgress(
         label: stringValue("mode") === "edit" ? "Preparing game edit" : "Preparing new game",
         detail: `Model: ${stringValue("model") ?? "default"}`,
       };
+    case "intent:start":
+      return { label: "Classifying request intent" };
+    case "intent:complete":
+      return {
+        label: `Intent: ${stringValue("intent") ?? "classified"}`,
+      };
+    case "answer:start":
+      return { label: "Answering harmless question" };
+    case "answer:complete":
+      return { label: "Answer ready" };
     case "planner:start":
       return { label: "Planning game design" };
     case "planner:complete":
@@ -143,6 +167,11 @@ function formatAgentProgress(
       };
     case "response:success":
       return { label: "Packaging generated files" };
+    case "response:assistant_reply":
+      return {
+        label: "Replying without game generation",
+        detail: stringValue("intent"),
+      };
     default:
       if (event.endsWith(":visibleProcess") && typeof details.step === "string") {
         return { label: details.step };
@@ -221,6 +250,7 @@ export function AiGameCreator() {
     const decoder = new TextDecoder();
     let buffer = "";
     let completedDraft: DraftGame | null = null;
+    let assistantReply: AssistantReply | null = null;
 
     while (true) {
       const { value, done } = await reader.read();
@@ -238,6 +268,8 @@ export function AiGameCreator() {
           addAgentProgress(streamEvent.event, streamEvent.details);
         } else if (streamEvent.type === "complete") {
           completedDraft = streamEvent.draft;
+        } else if (streamEvent.type === "reply") {
+          assistantReply = streamEvent.reply;
         } else if (streamEvent.type === "error") {
           throw new Error(streamEvent.error);
         }
@@ -248,6 +280,8 @@ export function AiGameCreator() {
       const streamEvent = JSON.parse(buffer) as AgentStreamEvent;
       if (streamEvent.type === "complete") {
         completedDraft = streamEvent.draft;
+      } else if (streamEvent.type === "reply") {
+        assistantReply = streamEvent.reply;
       } else if (streamEvent.type === "error") {
         throw new Error(streamEvent.error);
       } else if (streamEvent.type === "progress") {
@@ -255,8 +289,12 @@ export function AiGameCreator() {
       }
     }
 
+    if (assistantReply) {
+      return assistantReply;
+    }
+
     if (!completedDraft) {
-      throw new Error("Game generation finished without a draft.");
+      throw new Error("Game generation finished without a draft or reply.");
     }
 
     return completedDraft;
@@ -299,7 +337,21 @@ export function AiGameCreator() {
         throw new Error(payload.error || "Game generation failed.");
       }
 
-      const nextDraft = await readGenerationStream(response);
+      const result = await readGenerationStream(response);
+
+      if (result.generated === false) {
+        setMessages((current) => [
+          ...current,
+          {
+            id: makeId(),
+            role: "assistant",
+            content: result.message,
+          },
+        ]);
+        return;
+      }
+
+      const nextDraft = result;
       nextDraft.prompt = nextPrompt;
 
       setDraft(nextDraft);
