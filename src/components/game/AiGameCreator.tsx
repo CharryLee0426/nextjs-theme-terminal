@@ -328,6 +328,15 @@ export function AiGameCreator() {
         body: JSON.stringify({
           prompt: nextPrompt,
           previousHtml: draft?.html,
+          previousGame: draft
+            ? {
+                gameName: draft.gameName,
+                slug: draft.slug,
+                fileName: draft.fileName,
+                analysisFileName: draft.analysisFileName,
+                analysisMarkdown: draft.analysisMarkdown,
+              }
+            : undefined,
           stream: true,
         }),
       });

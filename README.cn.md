@@ -187,6 +187,8 @@ npx convex deploy
 
 HTML 生成完成后，同一路由会使用 fal.ai 生成游戏介绍图。若未配置 fal 凭据，本地开发会退回到生成 SVG 占位图，方便继续联调流程。用户可以在 iframe 弹窗中预览游戏，在聊天中继续要求修改，下载任一生成文件，并将最终 Markdown、HTML 与介绍图提交到 Convex storage。
 
+对于编辑提示词，客户端会把当前草稿 HTML 与游戏元数据（`gameName`、`slug`、文件名、分析 Markdown）一起发送给服务端。Agent 会基于这些上下文保留现有游戏身份，并按用户要求修改，而不是重新开始生成。
+
 本地开发时，在 `.env.local` 中加入以下变量；生产部署时也需要在 Next.js 托管平台设置：
 
 ```bash

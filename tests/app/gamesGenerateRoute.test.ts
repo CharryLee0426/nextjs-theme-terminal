@@ -119,6 +119,90 @@ describe("games generate API route", () => {
     );
   });
 
+  it("passes previous HTML and game metadata through edit requests", async () => {
+    const previousGame = {
+      gameName: "Original Runner",
+      slug: "original-runner",
+      fileName: "original-runner.html",
+      analysisFileName: "original-runner_analysis.md",
+      analysisMarkdown: "# Original Runner\n\nExisting design",
+    };
+
+    const response = await POST(
+      makeRequest({
+        prompt: "make the background space themed",
+        previousHtml: "<!DOCTYPE html><html><body>old game</body></html>",
+        previousGame,
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockedClassifyGameRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: "make the background space themed",
+        previousHtml: "<!DOCTYPE html><html><body>old game</body></html>",
+      }),
+    );
+    expect(mockedGenerateGameWithAgents).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: "make the background space themed",
+        previousHtml: "<!DOCTYPE html><html><body>old game</body></html>",
+        previousGame,
+      }),
+    );
+  });
+
+  it("returns downgrade guidance for infeasible edit prompts without running the edit pipeline", async () => {
+    const previousGame = {
+      gameName: "Original Runner",
+      slug: "original-runner",
+      fileName: "original-runner.html",
+      analysisFileName: "original-runner_analysis.md",
+      analysisMarkdown: "# Original Runner\n\nExisting design",
+    };
+    mockedClassifyGameRequest.mockResolvedValueOnce({
+      intent: "RELATED_OUT_OF_CAPABILITY_DOWNGRADABLE",
+      response:
+        "That full edit is not possible in a single-file HTML/WebJS minigame. We can downgrade it to local two-player controls, a saved high score, or simulated rival racers.",
+      visibleProcess: ["Classified the edit as too complex for the current minigame scope."],
+    });
+
+    const response = await POST(
+      makeRequest({
+        prompt: "add realtime multiplayer accounts with a global ranked leaderboard",
+        previousHtml: "<!DOCTYPE html><html><body>old game</body></html>",
+        previousGame,
+        stream: true,
+      }),
+    );
+    const lines = (await response.text())
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+
+    expect(mockedClassifyGameRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: "add realtime multiplayer accounts with a global ranked leaderboard",
+        previousHtml: "<!DOCTYPE html><html><body>old game</body></html>",
+      }),
+    );
+    expect(mockedGenerateGameWithAgents).not.toHaveBeenCalled();
+    expect(lines).toContainEqual(
+      expect.objectContaining({
+        type: "reply",
+        reply: expect.objectContaining({
+          generated: false,
+          intent: "RELATED_OUT_OF_CAPABILITY_DOWNGRADABLE",
+          message:
+            "That full edit is not possible in a single-file HTML/WebJS minigame. We can downgrade it to local two-player controls, a saved high score, or simulated rival racers.",
+          visibleProcess: [
+            "Classified the edit as too complex for the current minigame scope.",
+          ],
+        }),
+      }),
+    );
+  });
+
   it("streams progress events and a final draft as NDJSON", async () => {
     const response = await POST(makeRequest({ prompt: "make a runner", stream: true }));
 

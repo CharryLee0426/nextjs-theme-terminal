@@ -6,12 +6,14 @@ import {
   answerUnrelatedHarmlessQuestion,
   classifyGameRequest,
   generateGameWithAgents,
+  type PreviousGameContext,
   type GameRequestIntent,
 } from "@/lib/gameCreator/agents";
 
 type GameGenerateRequest = {
   prompt?: string;
   previousHtml?: string;
+  previousGame?: PreviousGameContext;
   stream?: boolean;
 };
 
@@ -157,10 +159,12 @@ async function generateIntroImage(prompt: string, gameName: string) {
 async function createGameDraft({
   prompt,
   previousHtml,
+  previousGame,
   logAgent,
 }: {
   prompt: string;
   previousHtml?: string;
+  previousGame?: PreviousGameContext;
   logAgent: GenerationLogger;
 }) {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -231,6 +235,7 @@ async function createGameDraft({
     skill,
     analysisTemplate,
     previousHtml,
+    previousGame,
     logger: logAgent,
   });
   logAgent("cover:start", {
@@ -287,6 +292,7 @@ export async function POST(request: Request) {
               const payload = await createGameDraft({
                 prompt,
                 previousHtml: body.previousHtml,
+                previousGame: body.previousGame,
                 logAgent: streamLogger,
               });
               if (payload.generated) {
@@ -325,6 +331,7 @@ export async function POST(request: Request) {
     const payload = await createGameDraft({
       prompt,
       previousHtml: body.previousHtml,
+      previousGame: body.previousGame,
       logAgent,
     });
     return NextResponse.json(payload);

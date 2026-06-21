@@ -188,6 +188,79 @@ describe("AiGameCreator", () => {
     });
   });
 
+  it("sends existing draft metadata when asking for game edits", async () => {
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce(
+        ndjsonResponse([
+          {
+            type: "complete",
+            draft: {
+              gameName: "Test Runner",
+              slug: "test-runner",
+              fileName: "test-runner.html",
+              analysisFileName: "test-runner_analysis.md",
+              analysisMarkdown: "# Test Runner\n\nDesign notes",
+              html: "<!DOCTYPE html><html><body><script></script></body></html>",
+              imageUrl: "data:image/svg+xml,test",
+              imageSource: "fallback",
+              imageNote: null,
+              prompt: "",
+              visibleProcess: [],
+              verificationConclusion: "PASS",
+              verificationReasons: [],
+              skillPath: "src/lib/gameCreator/html-minigame/SKILL.md",
+              openAiModel: "gpt-5.4-mini",
+            },
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        ndjsonResponse([
+          {
+            type: "reply",
+            reply: {
+              generated: false,
+              intent: "GREETING",
+              message: "Edit received.",
+              visibleProcess: [],
+              openAiModel: "gpt-5.4-mini",
+            },
+          },
+        ]),
+      );
+
+    renderGameCreator();
+
+    fireEvent.change(screen.getByLabelText("Game prompt"), {
+      target: { value: "make a runner" },
+    });
+    fireEvent.click(screen.getByLabelText("Generate game"));
+
+    await screen.findByRole("heading", { name: "Test Runner" });
+
+    fireEvent.change(screen.getByLabelText("Game prompt"), {
+      target: { value: "make the background space themed" },
+    });
+    fireEvent.click(screen.getByLabelText("Generate game"));
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+    });
+
+    expect(JSON.parse((global.fetch as jest.Mock).mock.calls[1][1].body)).toMatchObject({
+      prompt: "make the background space themed",
+      previousHtml: "<!DOCTYPE html><html><body><script></script></body></html>",
+      previousGame: {
+        gameName: "Test Runner",
+        slug: "test-runner",
+        fileName: "test-runner.html",
+        analysisFileName: "test-runner_analysis.md",
+        analysisMarkdown: "# Test Runner\n\nDesign notes",
+      },
+      stream: true,
+    });
+  });
+
   it("surfaces streamed generation errors in the conversation", async () => {
     (global.fetch as jest.Mock).mockResolvedValueOnce(
       ndjsonResponse([

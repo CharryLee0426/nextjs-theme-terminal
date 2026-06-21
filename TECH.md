@@ -185,9 +185,10 @@ AI Game Creator is a browser-game generation and publishing flow at **`/game`**.
     *   While generation is running, the client reads NDJSON progress events and displays a compact agent progress timeline. Events include skill loading, planning, building, verification, cover image generation, and concise `visibleProcess` summaries. Hidden chain-of-thought is not exposed.
     *   Assistant responses include user-visible generation steps, the OpenAI model, the vendored skill path, and verification status.
     *   After generation, the result card includes the intro image, generated analysis and HTML filenames, preview, submit, save-Markdown, save-HTML controls, and an expandable analysis Markdown document.
-    *   Additional prompts after the first generation pass the previous HTML back to the server so OpenAI can edit the current draft.
+    *   Additional prompts after the first generation pass the previous HTML plus draft metadata (`gameName`, `slug`, filenames, and analysis markdown) back to the server so the Agents SDK workflow can edit the current draft while preserving the existing game identity unless the user asks for a rename or redesign.
 *   **Game generation API**: `src/app/api/games/generate/route.ts`
     *   Reads the vendored `html-minigame` skill from `src/lib/gameCreator/html-minigame/SKILL.md` and the analysis template from `src/lib/gameCreator/html-minigame/reference/analysis-template.md`. This avoids depending on local Codex or Claude skill paths, so the route works on Vercel.
+    *   The skill includes an edit contract: treat existing HTML as the current source of truth, preserve title/slug/core behavior by default, update the analysis markdown, and return a complete revised HTML file rather than a patch.
     *   Calls the OpenAI Agents SDK with `OPENAI_API_KEY`.
     *   Uses `OPENAI_GAME_MODEL` when set, then `OPENAI_MODEL`, then defaults to `gpt-4.1-mini`.
     *   Runs three agents in sequence through `src/lib/gameCreator/agents.ts`:
