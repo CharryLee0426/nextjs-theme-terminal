@@ -18,7 +18,7 @@ The website is built using a modern, performance-oriented stack centered around 
     *   `remark` (remark-gfm, remark-math) and `rehype` (rehype-katex, rehype-slug, rehype-highlight) ecosystems for markdown processing, including GitHub Flavored Markdown, Math formatting (KaTeX), and syntax highlighting.
     *   `reading-time` for calculating estimated time to read.
 *   **Icons**: [Lucide React](https://lucide.dev/) for crisp, customizable SVG icons.
-*   **AI generation**: OpenAI Responses API for AI Game Creator HTML/CSS/JS generation.
+*   **AI generation**: OpenAI Agents SDK for AI Game Creator planning, standalone HTML generation, and verification.
 *   **Image generation**: [@fal-ai/client](https://fal.ai/) for server-side fal.ai image-to-image requests used by Magic Canvas.
 *   **Date Formatting**: `date-fns` for lightweight date manipulation and formatting.
 *   **Testing**: [Jest](https://jestjs.io/) via **next/jest**, [@testing-library/react](https://testing-library.com/docs/react-testing-library/intro/), `jest-environment-jsdom`. Tests live under **`tests/`** and apply coverage to **`src/**/*.{ts,tsx}`**.
@@ -46,7 +46,7 @@ The project follows a standard Next.js App Router structure. The separation of c
 │   │   ├── page.tsx      # Root page showcasing latest posts or general info.
 │   │   ├── about/        # About page route.
 │   │   ├── api/
-│   │   │   ├── games/         # OpenAI game HTML generation + generated-image proxy.
+│   │   │   ├── games/         # OpenAI Agents game generation + generated-image proxy.
 │   │   │   └── magic-canvas/  # fal.ai generation endpoint + generated-image download proxy.
 │   │   ├── canvas/       # Magic Canvas page route.
 │   │   ├── game/         # AI Game Creator route.
@@ -62,7 +62,7 @@ The project follows a standard Next.js App Router structure. The separation of c
 │   │   ├── MDXContent.tsx# Core component mapping MDX elements to React components.
 │   │   └── ...           # Structural (Header, Footer) and specific MDX components (Callout, CodeBlock, etc.).
 │   └── lib/              # Core business and data-fetching logic.
-│       ├── gameCreator/  # Vendored webjs-game-creator skill prompt used in production.
+│       ├── gameCreator/  # Agents workflow + vendored html-minigame skill used in production.
 │       ├── posts.ts      # Functions to read the file system, parse markdown, and fetch posts.
 │       └── types.ts      # TypeScript interfaces defining Post and Frontmatter shapes.
 └── package.json          # Project dependencies and operational scripts.
@@ -75,7 +75,7 @@ Note: the tree above abbreviates `src/lib`; see repository for the full file lis
 *   **Commands**: `npm test` runs Jest with **`collectCoverage: true`** for all matching files under `src/` (TypeScript and TSX). `npm run test:watch` uses the same configuration in watch mode.
 *   **Environment**: `jest.config.js` composes **[next/jest](https://nextjs.org/docs/app/building-your-application/testing/jest)** so transforms align with Next.js. **`moduleNameMapper`** maps `@/` to `src/`, matching `tsconfig.json` paths.
 *   **Output**: After each run, **`test_reports/jest-report-<ISO-timestamp>.md`** records pass/fail per test and appends **coverage totals and per-file percentages** (from `coverage-summary.json`). **`test_reports/coverage/`** holds Istanbul **`index.html`**, **`lcov.info`**, and **`coverage-summary.json`** for tooling or CI.
-*   **Middleware**: `src/middleware.ts` wraps `@convex-dev/auth` Next.js middleware; tests mock that package rather than hitting Convex.
+*   **Middleware**: `src/middleware.ts` wraps `@convex-dev/auth` Next.js middleware and passes the Convex URL explicitly; tests mock that package rather than hitting Convex.
 
 ### Continuous integration (GitHub Actions)
 
@@ -133,6 +133,8 @@ The app uses **[Convex](https://www.convex.dev/)** with **[@convex-dev/auth](htt
 
 Setup for both env vars and dev/prod deployments is documented in [README.md — Cloudflare Turnstile](./README.md#cloudflare-turnstile-forgot-password).
 
+Local development scripts set `NODE_OPTIONS=--dns-result-order=ipv4first` so Node/undici resolves Convex Cloud with IPv4 preference. This avoids intermittent `fetch failed` / timeout failures when the Next.js middleware proxies `auth:signIn` and `auth:signOut` actions to Convex.
+
 ### 5. Magic Canvas image-to-image workflow
 
 Magic Canvas is a dedicated drawing and style-transfer route at **`/canvas`**.
@@ -163,6 +165,7 @@ Magic Canvas is a dedicated drawing and style-transfer route at **`/canvas`**.
 *   **Location**: test files under `tests/`; production code under `src/` is what coverage measures (see **Testing pipeline** under [Architecture & Project Structure](#architecture--project-structure) in this file).
 *   **Stack**: Jest, `next/jest`, React Testing Library, and `jsdom` for component tests. Heavy dependencies (e.g. `fs` for `src/lib/posts.ts`, `heic2any` for `src/lib/heicNormalize.ts`, Convex auth in middleware) are **mocked** in tests so the suite runs without a real Convex deployment or browser HEIC decode.
 *   **Canvas tests**: `tests/components/MagicCanvas.test.tsx` covers controls, auth gating, streaming generation request payloads, Convex save flow, preview behavior, and proxied download behavior. `tests/app/magicCanvasRoute.test.ts` covers route validation, fal upload/subscribe payloads, SSE output, and download proxy headers.
+*   **Game creator tests**: `tests/app/gamesGenerateRoute.test.ts` covers the `/api/games/generate` JSON response path, NDJSON streaming progress contract, streamed error events, and missing OpenAI credentials. `tests/components/AiGameCreator.test.tsx` covers frontend stream parsing, agent progress timeline rendering, final draft rendering, and streamed error display.
 *   **Artifacts**: each `npm test` run produces a timestamped Markdown report and refreshes `test_reports/coverage/` (see [README.md — Testing](./README.md#testing)).
 *   **CI**: Pull requests targeting **`main`** run Jest on GitHub Actions with the same report layout uploaded as artifacts; behavior is detailed under **[Continuous integration (GitHub Actions)](#continuous-integration-github-actions)** above.
 
@@ -179,16 +182,21 @@ AI Game Creator is a browser-game generation and publishing flow at **`/game`**.
 *   **Conversation page**:
     *   Submitting a prompt switches to chat mode.
     *   User messages render on the right; assistant messages render on the left.
-    *   Assistant responses include user-visible generation steps, the OpenAI model, the vendored skill path, and verification status. Hidden chain-of-thought is not exposed.
-    *   After generation, the result card includes the intro image, generated filename, preview, submit, save-HTML controls, and an expandable design document.
+    *   While generation is running, the client reads NDJSON progress events and displays a compact agent progress timeline. Events include skill loading, planning, building, verification, cover image generation, and concise `visibleProcess` summaries. Hidden chain-of-thought is not exposed.
+    *   Assistant responses include user-visible generation steps, the OpenAI model, the vendored skill path, and verification status.
+    *   After generation, the result card includes the intro image, generated analysis and HTML filenames, preview, submit, save-Markdown, save-HTML controls, and an expandable analysis Markdown document.
     *   Additional prompts after the first generation pass the previous HTML back to the server so OpenAI can edit the current draft.
 *   **Game generation API**: `src/app/api/games/generate/route.ts`
-    *   Reads the vendored skill prompt from `src/lib/gameCreator/webjs-game-creator-skill.md`. This avoids depending on local Codex paths such as `/Users/.../.codex/skills`, so the route works on Vercel.
-    *   Calls the OpenAI Responses API with `OPENAI_API_KEY`.
+    *   Reads the vendored `html-minigame` skill from `src/lib/gameCreator/html-minigame/SKILL.md` and the analysis template from `src/lib/gameCreator/html-minigame/reference/analysis-template.md`. This avoids depending on local Codex or Claude skill paths, so the route works on Vercel.
+    *   Calls the OpenAI Agents SDK with `OPENAI_API_KEY`.
     *   Uses `OPENAI_GAME_MODEL` when set, then `OPENAI_MODEL`, then defaults to `gpt-4.1-mini`.
-    *   Requires structured JSON output containing game name, filename, complete HTML, design document, visible process steps, and a `PASS` or `FAIL` verification conclusion.
-    *   Validates that the returned HTML looks like a full document and contains embedded `<style>` and `<script>` blocks.
-    *   Adds prompt requirements that generated pages fit inside iframe/mobile/desktop viewports and avoid clipped fixed layouts.
+    *   Runs three agents in sequence through `src/lib/gameCreator/agents.ts`:
+        *   planner: produces concrete analysis Markdown for `<slug>_analysis.md`;
+        *   builder: produces standalone `<slug>.html`;
+        *   verifier: returns a `PASS` or `FAIL` verification conclusion and concise reasons.
+    *   Returns normal JSON for legacy/non-stream callers. When the request includes `stream: true`, returns newline-delimited JSON (`application/x-ndjson`) progress events plus a final `complete` event containing the full draft.
+    *   Validates that the returned HTML looks like a full document, contains embedded `<style>` and `<script>` blocks, and does not contain obvious external dependency loaders.
+    *   Emits server console logs with request ids and the same observable progress events used by the frontend. These logs intentionally avoid hidden chain-of-thought.
 *   **Intro image generation**:
     *   The same route uses fal.ai model `fal-ai/flux/schnell` to generate a game intro image from the prompt and generated game name.
     *   Credentials come from server-only `FAL_KEY` or `FAL_API_KEY`.
@@ -198,9 +206,9 @@ AI Game Creator is a browser-game generation and publishing flow at **`/game`**.
     *   Draft and published games preview in an in-page modal using an iframe with `sandbox="allow-scripts"`.
     *   The preview modal uses a fixed 16:9 stage inside a larger scrollable shell to reduce clipping when generated games use their own viewport assumptions.
 *   **Convex persistence**:
-    *   `convex/schema.ts` defines `games` with `userId`, `name`, `prompt`, `htmlId`, `imageId`, `createdAt`, and `likes`.
+    *   `convex/schema.ts` defines `games` with `userId`, `name`, optional `slug`, `prompt`, `htmlId`, optional `analysisId`, optional `htmlFileName`, optional `analysisFileName`, `imageId`, `createdAt`, and `likes`.
     *   `convex/games.ts` exposes `listPublished`, authenticated `generateUploadUrl`, authenticated `createGame`, and `like`.
-    *   Published HTML and intro images are stored as Convex storage objects. The database record stores only metadata and storage ids.
+    *   Published analysis Markdown, game HTML, and intro images are stored as Convex storage objects. The database record stores only metadata and storage ids.
     *   Deploy schema/function changes with `npx convex deploy` before relying on production publishing.
 *   **Production environment**:
     *   Next.js host: `OPENAI_API_KEY`, optional `OPENAI_GAME_MODEL`, and `FAL_KEY` or `FAL_API_KEY`.

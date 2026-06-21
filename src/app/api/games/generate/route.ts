@@ -2,42 +2,65 @@ import { fal } from "@fal-ai/client";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
+import { generateGameWithAgents } from "@/lib/gameCreator/agents";
 
 type GameGenerateRequest = {
   prompt?: string;
   previousHtml?: string;
+  stream?: boolean;
 };
 
-type OpenAiGameResponse = {
-  gameName: string;
-  fileName: string;
-  html: string;
-  designDocument: {
-    genre: string;
-    targetDevice: string;
-    controls: string;
-    gameplayLoop: string;
-    entities: string;
-    scoring: string;
-    winLossStates: string;
-    screens: string;
-    visualStyle: string;
-    soundPolicy: string;
-    verificationCriteria: string;
-  };
-  visibleProcess: string[];
-  verificationConclusion: "PASS" | "FAIL";
-  verificationReasons: string[];
-};
+type GenerationLogger = (event: string, details?: Record<string, unknown>) => void;
 
 const SKILL_PATH = path.join(
   process.cwd(),
-  "src/lib/gameCreator/webjs-game-creator-skill.md",
+  "src/lib/gameCreator/html-minigame/SKILL.md",
 );
-const SKILL_DISPLAY_PATH = "src/lib/gameCreator/webjs-game-creator-skill.md";
-const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
+const ANALYSIS_TEMPLATE_PATH = path.join(
+  process.cwd(),
+  "src/lib/gameCreator/html-minigame/reference/analysis-template.md",
+);
+const SKILL_DISPLAY_PATH = "src/lib/gameCreator/html-minigame/SKILL.md";
 const OPENAI_MODEL = process.env.OPENAI_GAME_MODEL || process.env.OPENAI_MODEL || "gpt-4.1-mini";
 const INTRO_IMAGE_MODEL = "fal-ai/flux/schnell";
+
+export const runtime = "nodejs";
+
+function createGenerationLogger() {
+  const requestId = Math.random().toString(36).slice(2, 10);
+  const startedAt = Date.now();
+
+  return (event: string, details: Record<string, unknown> = {}) => {
+    console.info(
+      `[game-agent:${requestId}] ${event}`,
+      JSON.stringify({
+        elapsedMs: Date.now() - startedAt,
+        ...details,
+      }),
+    );
+  };
+}
+
+function writeStreamEvent(
+  controller: ReadableStreamDefaultController<Uint8Array>,
+  event: unknown,
+) {
+  controller.enqueue(new TextEncoder().encode(`${JSON.stringify(event)}\n`));
+}
+
+function createStreamingLogger(
+  controller: ReadableStreamDefaultController<Uint8Array>,
+  consoleLogger: GenerationLogger,
+): GenerationLogger {
+  return (event, details = {}) => {
+    consoleLogger(event, details);
+    writeStreamEvent(controller, {
+      type: "progress",
+      event,
+      details,
+    });
+  };
+}
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
@@ -50,20 +73,6 @@ function escapeHtml(value: string) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
-}
-
-function slugify(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 48) || "ai-game";
-}
-
-function normalizeFileName(fileName: string, gameName: string) {
-  const cleaned = fileName.trim().toLowerCase().replace(/[^a-z0-9.-]+/g, "-");
-  if (cleaned.endsWith(".html") && cleaned.length > ".html".length) return cleaned;
-  return `${slugify(gameName)}.html`;
 }
 
 function createFallbackIntroImage(prompt: string, gameName: string) {
@@ -87,195 +96,6 @@ function createFallbackIntroImage(prompt: string, gameName: string) {
   <text x="110" y="224" fill="#c9c9c9" font-family="monospace" font-size="26">${escapeHtml(prompt.slice(0, 76))}</text>
 </svg>`);
   return `data:image/svg+xml;charset=utf-8,${encoded}`;
-}
-
-function extractOutputText(data: unknown) {
-  const record = data as Record<string, unknown>;
-  if (typeof record.output_text === "string") return record.output_text;
-
-  const output = record.output;
-  if (!Array.isArray(output)) return null;
-
-  const parts: string[] = [];
-  for (const item of output) {
-    const content = (item as Record<string, unknown>).content;
-    if (!Array.isArray(content)) continue;
-    for (const contentItem of content) {
-      const text = (contentItem as Record<string, unknown>).text;
-      if (typeof text === "string") parts.push(text);
-    }
-  }
-
-  return parts.length > 0 ? parts.join("\n") : null;
-}
-
-function validateOpenAiGameResponse(value: unknown): OpenAiGameResponse {
-  if (!value || typeof value !== "object") {
-    throw new Error("OpenAI response was not a JSON object.");
-  }
-
-  const data = value as Partial<OpenAiGameResponse>;
-  if (!data.gameName || !data.fileName || !data.html || !data.designDocument) {
-    throw new Error("OpenAI response is missing required game fields.");
-  }
-  if (!data.html.includes("<!doctype html") && !data.html.includes("<html")) {
-    throw new Error("OpenAI response did not include a complete HTML document.");
-  }
-  if (!data.html.includes("<style") || !data.html.includes("<script")) {
-    throw new Error("Generated game must include embedded CSS and JavaScript.");
-  }
-
-  return {
-    gameName: data.gameName,
-    fileName: normalizeFileName(data.fileName, data.gameName),
-    html: data.html,
-    designDocument: data.designDocument,
-    visibleProcess: Array.isArray(data.visibleProcess) ? data.visibleProcess : [],
-    verificationConclusion: data.verificationConclusion === "FAIL" ? "FAIL" : "PASS",
-    verificationReasons: Array.isArray(data.verificationReasons) ? data.verificationReasons : [],
-  };
-}
-
-async function generateGameWithOpenAi(prompt: string, skill: string, previousHtml?: string) {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error("Missing OPENAI_API_KEY environment variable.");
-  }
-
-  const response = await fetch(OPENAI_RESPONSES_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: OPENAI_MODEL,
-      input: [
-        {
-          role: "system",
-          content: [
-            {
-              type: "input_text",
-              text: [
-                "You are the AI Game Creator backend.",
-                "Use the provided webjs-game-creator skill as binding workflow instructions.",
-                "Generate a complete, self-contained browser mini game as pure HTML, CSS, and JavaScript.",
-                "Do not use external scripts, stylesheets, images, fonts, or package managers.",
-                "The generated page must fit entirely inside its viewport. Use responsive sizing such as width:100vw, height:100vh, max-width/max-height, CSS grid/flex, and canvas resizing. Avoid fixed layouts that clip vertically or horizontally in an iframe preview.",
-                "If the game uses canvas, size the canvas from its container and keep all UI controls visible without page scrolling at 1365x768, 1024x768, and 390x844 viewports.",
-                "Return only JSON that matches the schema.",
-                "Do not include hidden chain-of-thought. Put only concise user-visible process steps in visibleProcess.",
-                "",
-                "Skill file:",
-                skill,
-              ].join("\n"),
-            },
-          ],
-        },
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: [
-                previousHtml
-                  ? "Edit the existing game HTML using this new user prompt."
-                  : "Create a new game using this user prompt.",
-                `User prompt: ${prompt}`,
-                previousHtml ? `Previous HTML:\n${previousHtml}` : "",
-              ]
-                .filter(Boolean)
-                .join("\n\n"),
-            },
-          ],
-        },
-      ],
-      max_output_tokens: 24000,
-      text: {
-        format: {
-          type: "json_schema",
-          name: "webjs_game_generation",
-          strict: true,
-          schema: {
-            type: "object",
-            additionalProperties: false,
-            required: [
-              "gameName",
-              "fileName",
-              "html",
-              "designDocument",
-              "visibleProcess",
-              "verificationConclusion",
-              "verificationReasons",
-            ],
-            properties: {
-              gameName: { type: "string" },
-              fileName: { type: "string" },
-              html: { type: "string" },
-              designDocument: {
-                type: "object",
-                additionalProperties: false,
-                required: [
-                  "genre",
-                  "targetDevice",
-                  "controls",
-                  "gameplayLoop",
-                  "entities",
-                  "scoring",
-                  "winLossStates",
-                  "screens",
-                  "visualStyle",
-                  "soundPolicy",
-                  "verificationCriteria",
-                ],
-                properties: {
-                  genre: { type: "string" },
-                  targetDevice: { type: "string" },
-                  controls: { type: "string" },
-                  gameplayLoop: { type: "string" },
-                  entities: { type: "string" },
-                  scoring: { type: "string" },
-                  winLossStates: { type: "string" },
-                  screens: { type: "string" },
-                  visualStyle: { type: "string" },
-                  soundPolicy: { type: "string" },
-                  verificationCriteria: { type: "string" },
-                },
-              },
-              visibleProcess: {
-                type: "array",
-                items: { type: "string" },
-              },
-              verificationConclusion: {
-                type: "string",
-                enum: ["PASS", "FAIL"],
-              },
-              verificationReasons: {
-                type: "array",
-                items: { type: "string" },
-              },
-            },
-          },
-        },
-      },
-    }),
-  });
-
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    const message =
-      typeof payload?.error?.message === "string"
-        ? payload.error.message
-        : "OpenAI game generation failed.";
-    throw new Error(message);
-  }
-
-  const outputText = extractOutputText(payload);
-  if (!outputText) {
-    throw new Error("OpenAI did not return text output.");
-  }
-
-  return validateOpenAiGameResponse(JSON.parse(outputText));
 }
 
 function extractImageUrl(data: unknown): string | null {
@@ -321,31 +141,138 @@ async function generateIntroImage(prompt: string, gameName: string) {
   return { imageUrl, source: "fal.ai", note: null };
 }
 
+async function createGameDraft({
+  prompt,
+  previousHtml,
+  logAgent,
+}: {
+  prompt: string;
+  previousHtml?: string;
+  logAgent: GenerationLogger;
+}) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    logAgent("request:error", { error: "Missing OPENAI_API_KEY environment variable." });
+    throw new Error("Missing OPENAI_API_KEY environment variable.");
+  }
+
+  logAgent("skill:load:start", {
+    skillPath: SKILL_DISPLAY_PATH,
+    analysisTemplatePath: "src/lib/gameCreator/html-minigame/reference/analysis-template.md",
+  });
+  const [skill, analysisTemplate] = await Promise.all([
+    readFile(SKILL_PATH, "utf8"),
+    readFile(ANALYSIS_TEMPLATE_PATH, "utf8"),
+  ]);
+  if (!skill.includes("Output contract") || !skill.includes("<slug>_analysis.md")) {
+    logAgent("skill:load:error", { error: "Malformed html-minigame skill." });
+    throw new Error("html-minigame skill is not available or is malformed.");
+  }
+  logAgent("skill:load:complete", {
+    skillChars: skill.length,
+    analysisTemplateChars: analysisTemplate.length,
+  });
+
+  const draft = await generateGameWithAgents({
+    apiKey,
+    model: OPENAI_MODEL,
+    prompt,
+    skill,
+    analysisTemplate,
+    previousHtml,
+    logger: logAgent,
+  });
+  logAgent("cover:start", {
+    gameName: draft.gameName,
+    provider: process.env.FAL_KEY || process.env.FAL_API_KEY ? "fal.ai" : "fallback",
+  });
+  const intro = await generateIntroImage(prompt, draft.gameName);
+  logAgent("cover:complete", {
+    gameName: draft.gameName,
+    source: intro.source,
+    note: intro.note,
+  });
+
+  logAgent("response:success", {
+    gameName: draft.gameName,
+    files: [draft.analysisFileName, draft.fileName],
+    verificationConclusion: draft.verificationConclusion,
+  });
+
+  return {
+    ...draft,
+    imageUrl: intro.imageUrl,
+    imageSource: intro.source,
+    imageNote: intro.note,
+    skillPath: SKILL_DISPLAY_PATH,
+    openAiModel: OPENAI_MODEL,
+  };
+}
+
 export async function POST(request: Request) {
+  const logAgent = createGenerationLogger();
   try {
     const body = (await request.json()) as GameGenerateRequest;
     const prompt = body.prompt?.trim();
     if (!prompt) {
       return jsonError("Prompt is required.", 400);
     }
+    logAgent("request:received", {
+      promptLength: prompt.length,
+      hasPreviousHtml: Boolean(body.previousHtml),
+    });
 
-    const skill = await readFile(SKILL_PATH, "utf8");
-    if (!skill.includes("Conclusion: PASS") || !skill.includes("pure HTML, CSS, and JavaScript")) {
-      return jsonError("webjs-game-creator skill is not available or is malformed.", 500);
+    if (body.stream) {
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          async start(controller) {
+            const streamLogger = createStreamingLogger(controller, logAgent);
+            try {
+              streamLogger("stream:start", {
+                promptLength: prompt.length,
+                hasPreviousHtml: Boolean(body.previousHtml),
+              });
+              const payload = await createGameDraft({
+                prompt,
+                previousHtml: body.previousHtml,
+                logAgent: streamLogger,
+              });
+              writeStreamEvent(controller, {
+                type: "complete",
+                draft: payload,
+              });
+            } catch (error) {
+              const message = error instanceof Error ? error.message : "Game generation failed.";
+              streamLogger("request:error", { error: message });
+              writeStreamEvent(controller, {
+                type: "error",
+                error: message,
+              });
+            } finally {
+              controller.close();
+            }
+          },
+        }),
+        {
+          headers: {
+            "Content-Type": "application/x-ndjson; charset=utf-8",
+            "Cache-Control": "no-cache, no-transform",
+            "X-Content-Type-Options": "nosniff",
+          },
+        },
+      );
     }
 
-    const draft = await generateGameWithOpenAi(prompt, skill, body.previousHtml);
-    const intro = await generateIntroImage(prompt, draft.gameName);
-
-    return NextResponse.json({
-      ...draft,
-      imageUrl: intro.imageUrl,
-      imageSource: intro.source,
-      imageNote: intro.note,
-      skillPath: SKILL_DISPLAY_PATH,
-      openAiModel: OPENAI_MODEL,
+    const payload = await createGameDraft({
+      prompt,
+      previousHtml: body.previousHtml,
+      logAgent,
     });
+    return NextResponse.json(payload);
   } catch (error) {
+    logAgent("request:error", {
+      error: error instanceof Error ? error.message : "Game generation failed.",
+    });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Game generation failed." },
       { status: 500 },

@@ -16,7 +16,7 @@ A modern, retro terminal-inspired blog theme built with Next.js 15, featuring MD
 - 🔍 **SEO Friendly** - Proper meta tags, structured data, and sitemap generation
 - 🌙 **Terminal Color Schemes** - Customizable themes inspired by classic terminal emulators
 - 🪄 **Magic Canvas** - Signed-in users can draw on `/canvas`, transform sketches with fal.ai image-to-image generation, and save results to Convex with metadata
-- 🎮 **AI Game Creator** - Generate single-file browser mini games on `/game` with the OpenAI API, create intro images with fal.ai, preview/edit games in chat, and publish them to Convex storage
+- 🎮 **AI Game Creator** - Generate browser mini games on `/game` with the OpenAI Agents SDK, stream visible agent progress, create intro images with fal.ai, and publish both analysis Markdown and standalone HTML to Convex storage
 - 🖼️ **Gallery & Accounts** - Gallery browsing/upload flows plus Convex-backed sign-in, sign-up, profile, and password reset
 - 🚀 **Modern Stack** - TypeScript, Tailwind CSS, and cutting-edge web technologies
 - 🧪 **Unit tests** - [Jest](https://jestjs.io/) with [Testing Library](https://testing-library.com/); coverage and Markdown reports (see [Testing](#testing))
@@ -36,7 +36,7 @@ terminal-theme-nextjs/
 ├── src/
 │   ├── app/                   # Next.js App Router
 │   │   ├── about/             # About page
-│   │   ├── api/games/         # OpenAI game generation + intro image proxy
+│   │   ├── api/games/         # OpenAI Agents game generation + intro image proxy
 │   │   ├── api/magic-canvas/  # fal.ai image generation + download proxy
 │   │   ├── canvas/            # Magic Canvas drawing and style-transfer page
 │   │   ├── game/              # AI Game Creator page
@@ -59,7 +59,7 @@ terminal-theme-nextjs/
 │   │   ├── PostCard.tsx       # Blog post preview cards
 │   │   └── *.tsx              # Other UI components
 │   └── lib/                   # Utility functions, prompts, and types
-│       ├── gameCreator/       # Vendored webjs-game-creator skill prompt
+│       ├── gameCreator/       # Agents workflow + vendored html-minigame skill
 │       ├── posts.ts           # Post management utilities
 │       └── types.ts           # TypeScript type definitions
 ├── .github/
@@ -96,7 +96,7 @@ terminal-theme-nextjs/
 - **[rehype-highlight](https://github.com/rehypejs/rehype-highlight)** - Syntax highlighting
 
 ### Utilities
-- **[OpenAI API](https://platform.openai.com/docs/)** - Generates self-contained HTML/CSS/JS mini games for AI Game Creator
+- **[OpenAI Agents SDK](https://openai.github.io/openai-agents-js/)** - Multi-agent workflow for AI Game Creator planning, HTML generation, and verification
 - **[@fal-ai/client](https://fal.ai/)** - fal.ai image generation client for Magic Canvas
 - **[date-fns](https://date-fns.org/)** - Date manipulation
 - **[reading-time](https://github.com/ngryman/reading-time)** - Reading time estimation
@@ -106,7 +106,7 @@ terminal-theme-nextjs/
 ## 🚀 Getting Started
 
 ### Prerequisites
-- Node.js 18+ 
+- Node.js 22+ recommended. The OpenAI Agents SDK used by AI Game Creator officially targets Node.js 22 or later.
 - npm, yarn, pnpm, or bun
 
 ### Installation
@@ -169,9 +169,15 @@ npx convex deploy
 
 ### AI Game Creator setup
 
-The `/game` page lets users describe a browser mini game, opens a ChatGPT-style conversation, and calls the server route at `src/app/api/games/generate/route.ts`. The route reads the vendored skill prompt from `src/lib/gameCreator/webjs-game-creator-skill.md`, sends it with the user prompt to the OpenAI Responses API, and expects a complete single-file HTML game plus design and verification metadata.
+The `/game` page lets users describe a browser mini game, opens a ChatGPT-style conversation, and calls the server route at `src/app/api/games/generate/route.ts`. The route reads the vendored `html-minigame` skill from `src/lib/gameCreator/html-minigame/SKILL.md` and runs an OpenAI Agents SDK workflow:
 
-After the HTML is generated, the same route asks fal.ai for a game intro image. If fal credentials are missing, it falls back to a generated SVG placeholder so local development can still exercise the flow. Users can preview the game in an iframe modal, ask for edits in chat, and submit the final HTML plus intro image to Convex storage.
+- planner agent: creates `<slug>_analysis.md`
+- builder agent: creates standalone `<slug>.html`
+- verifier agent: returns a `PASS` / `FAIL` verification result
+
+The client requests a streaming NDJSON response (`stream: true`) and displays visible progress events such as planning, building, verification, cover generation, and concise `visibleProcess` summaries. Hidden chain-of-thought is not exposed.
+
+After the HTML is generated, the same route asks fal.ai for a game intro image. If fal credentials are missing, it falls back to a generated SVG placeholder so local development can still exercise the flow. Users can preview the game in an iframe modal, ask for edits in chat, download either generated file, and submit the final Markdown, HTML, and intro image to Convex storage.
 
 Add these variables to `.env.local` for local development and to your production host for deployment:
 
@@ -181,10 +187,12 @@ OPENAI_GAME_MODEL=gpt-4.1-mini # optional; defaults to gpt-4.1-mini
 FAL_KEY=your-fal-key           # or FAL_API_KEY
 ```
 
-Published game metadata is stored in the Convex `games` table and points to two Convex storage objects:
+Published game records are stored in the Convex `games` table. Each record points to three Convex storage objects and stores metadata:
 
+- generated analysis Markdown file
 - generated HTML file
 - intro image
+- slug and generated filenames
 - game name
 - source prompt
 - creation time
@@ -198,7 +206,7 @@ npx convex deploy
 
 ## 🧪 Testing
 
-Unit tests use **[Jest](https://jestjs.io/)** with **[next/jest](https://nextjs.org/docs/app/building-your-application/testing/jest)** and **[Testing Library](https://testing-library.com/)**. Test files live in **`tests/`** and are named `*.test.ts` or `*.test.tsx` (import application code from `src` via the `@/` path alias). Canvas coverage includes the Magic Canvas React component, auth gating, Convex save flow, and the `/api/magic-canvas` route, with fal and Convex calls mocked.
+Unit tests use **[Jest](https://jestjs.io/)** with **[next/jest](https://nextjs.org/docs/app/building-your-application/testing/jest)** and **[Testing Library](https://testing-library.com/)**. Test files live in **`tests/`** and are named `*.test.ts` or `*.test.tsx` (import application code from `src` via the `@/` path alias). Canvas coverage includes the Magic Canvas React component, auth gating, Convex save flow, and the `/api/magic-canvas` route, with fal and Convex calls mocked. AI Game Creator coverage includes the `/api/games/generate` JSON and NDJSON stream contracts plus frontend stream parsing and progress UI rendering.
 
 ```bash
 npm test            # run all tests; collect coverage for src/**/*.{ts,tsx}
@@ -328,6 +336,8 @@ Official reference: [Convex Auth — manual setup](https://labs.convex.dev/auth/
 
 4. Restart `npx convex dev` after changing Convex env vars.
 
+The local `dev` and `start` scripts set `NODE_OPTIONS=--dns-result-order=ipv4first`. This avoids Node/undici connection timeouts seen on some networks when the Next.js auth middleware proxies `auth:signIn` / `auth:signOut` actions to Convex Cloud.
+
 ### Production deployment
 
 Convex **dev** and **prod** are separate deployments. You must configure **`JWT_PRIVATE_KEY` and `JWKS` on the production deployment** as well—copying dev keys is possible but **rotating** or using a **dedicated prod key pair** is recommended.
@@ -429,10 +439,10 @@ After changing Convex env vars, restart `npx convex dev` if it is running.
 
 3. **Environment variables**
    - Add `NEXT_PUBLIC_CONVEX_URL` and `NEXT_PUBLIC_CONVEX_SITE_URL` for your **production** Convex deployment (see [Convex Auth and JWT keys](#convex-auth-and-jwt-keys-dev-and-production)).
-   - On Convex **production**, set `JWT_PRIVATE_KEY` and `JWKS` (same section), and deploy the latest Convex schema/functions with `npx convex deploy` so Magic Canvas can write `canvasImages`.
+   - On Convex **production**, set `JWT_PRIVATE_KEY` and `JWKS` (same section), and deploy the latest Convex schema/functions with `npx convex deploy` so Magic Canvas can write `canvasImages` and AI Game Creator can write `games`.
    - For **forgot password**, add `NEXT_PUBLIC_TURNSTILE_SITE_KEY` on Vercel and `TURNSTILE_SECRET_KEY` on Convex **production** (see [Cloudflare Turnstile](#cloudflare-turnstile-forgot-password)).
    - For **Magic Canvas**, add `FAL_KEY` or `FAL_API_KEY` on the Next.js host. This value must stay server-side and must not be prefixed with `NEXT_PUBLIC_`.
-   - For **AI Game Creator**, add `OPENAI_API_KEY` on the Next.js host. Optionally add `OPENAI_GAME_MODEL` to choose the model used for game HTML generation. Keep these values server-side and do not use `NEXT_PUBLIC_`.
+   - For **AI Game Creator**, add `OPENAI_API_KEY` on the Next.js host. Optionally add `OPENAI_GAME_MODEL` to choose the model used by the Agents SDK workflow. Keep these values server-side and do not use `NEXT_PUBLIC_`.
    - Redeploy after changing env vars.
 
 ### Build Configuration

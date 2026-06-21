@@ -2756,10 +2756,21 @@ a:hover {
 }
 
 .game-chat__loading {
+  align-self: flex-start;
+  width: min(720px, 100%);
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid rgba(102, 217, 239, 0.28);
+  border-radius: 8px;
+  background: rgba(29, 30, 32, 0.82);
+  color: var(--terminal-blue);
+}
+
+.game-chat__loading-heading {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  color: var(--terminal-blue);
 }
 
 .game-chat__loading svg,
@@ -2770,6 +2781,34 @@ a:hover {
 
 .game-chat__loading svg {
   animation: game-spin 0.9s linear infinite;
+}
+
+.game-agent-progress {
+  max-height: 210px;
+  overflow: auto;
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0 0 0 28px;
+  color: var(--color);
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+.game-agent-progress li::marker {
+  color: var(--terminal-green);
+}
+
+.game-agent-progress li:last-child span {
+  color: var(--terminal-green);
+}
+
+.game-agent-progress small {
+  display: block;
+  margin-top: 2px;
+  color: var(--color);
+  opacity: 0.78;
+  overflow-wrap: anywhere;
 }
 
 @keyframes game-spin {
@@ -2837,27 +2876,15 @@ a:hover {
   margin-bottom: 8px;
 }
 
-.game-result-card__details dl {
+.game-result-card__details pre {
   max-height: 170px;
   overflow: auto;
   margin: 0;
   padding-right: 6px;
-}
-
-.game-result-card__details div {
-  display: grid;
-  gap: 2px;
-  margin-bottom: 8px;
-}
-
-.game-result-card__details dt {
-  color: var(--accent);
-  font-weight: 700;
-}
-
-.game-result-card__details dd {
-  margin: 0;
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
+  font: inherit;
+  line-height: 1.45;
 }
 
 .game-result-card__actions {

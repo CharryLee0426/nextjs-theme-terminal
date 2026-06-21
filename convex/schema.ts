@@ -41,8 +41,12 @@ export default defineSchema({
   games: defineTable({
     userId: v.id("users"),
     name: v.string(),
+    slug: v.optional(v.string()),
     prompt: v.string(),
     htmlId: v.id("_storage"),
+    analysisId: v.optional(v.id("_storage")),
+    htmlFileName: v.optional(v.string()),
+    analysisFileName: v.optional(v.string()),
     imageId: v.id("_storage"),
     createdAt: v.number(),
     likes: v.number(),

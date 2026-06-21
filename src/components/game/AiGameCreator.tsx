@@ -27,19 +27,45 @@ type ChatMessage = {
 
 type DraftGame = {
   gameName: string;
+  slug: string;
   fileName: string;
+  analysisFileName: string;
+  analysisMarkdown: string;
   html: string;
   imageUrl: string;
   imageSource: string;
   imageNote?: string | null;
   prompt: string;
-  designDocument: Record<string, string>;
   visibleProcess: string[];
   verificationConclusion: "PASS" | "FAIL";
   verificationReasons: string[];
   skillPath: string;
   openAiModel: string;
 };
+
+type AgentProgressItem = {
+  id: string;
+  label: string;
+  detail?: string;
+};
+
+type AgentProgressEvent = {
+  type: "progress";
+  event: string;
+  details?: Record<string, unknown>;
+};
+
+type AgentCompleteEvent = {
+  type: "complete";
+  draft: DraftGame;
+};
+
+type AgentErrorEvent = {
+  type: "error";
+  error: string;
+};
+
+type AgentStreamEvent = AgentProgressEvent | AgentCompleteEvent | AgentErrorEvent;
 
 type PublishedGame = {
   _id: Id<"games">;
@@ -48,6 +74,9 @@ type PublishedGame = {
   createdAt: number;
   likes: number;
   htmlUrl: string | null;
+  analysisUrl?: string | null;
+  htmlFileName?: string;
+  analysisFileName?: string;
   imageUrl: string | null;
 };
 
@@ -55,8 +84,71 @@ function makeId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function dataUrlToBlobUrl(html: string) {
-  return URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
+function formatAgentProgress(
+  event: string,
+  details: Record<string, unknown> = {},
+): { label: string; detail?: string } | null {
+  const stringValue = (key: string) =>
+    typeof details[key] === "string" ? details[key] : undefined;
+  const numberValue = (key: string) =>
+    typeof details[key] === "number" ? details[key] : undefined;
+
+  switch (event) {
+    case "stream:start":
+      return { label: "Starting agent workflow" };
+    case "skill:load:start":
+      return { label: "Loading minigame skill" };
+    case "skill:load:complete":
+      return { label: "Skill loaded", detail: "Analysis template ready" };
+    case "workflow:start":
+      return {
+        label: stringValue("mode") === "edit" ? "Preparing game edit" : "Preparing new game",
+        detail: `Model: ${stringValue("model") ?? "default"}`,
+      };
+    case "planner:start":
+      return { label: "Planning game design" };
+    case "planner:complete":
+      return {
+        label: `Analysis created for ${stringValue("gameName") ?? "game"}`,
+        detail: [stringValue("analysisFileName"), stringValue("fileName")]
+          .filter(Boolean)
+          .join(" + "),
+      };
+    case "builder:start":
+      return { label: "Building playable HTML", detail: stringValue("fileName") };
+    case "builder:complete": {
+      const htmlChars = numberValue("htmlChars");
+      return {
+        label: "Standalone game file generated",
+        detail: htmlChars ? `${htmlChars.toLocaleString()} HTML characters` : undefined,
+      };
+    }
+    case "verifier:start":
+      return { label: "Verifying game package" };
+    case "verifier:complete":
+      return {
+        label: `Verification ${stringValue("verificationConclusion") ?? "complete"}`,
+        detail: Array.isArray(details.verificationReasons)
+          ? details.verificationReasons.join("; ")
+          : undefined,
+      };
+    case "cover:start":
+      return { label: "Preparing cover image", detail: stringValue("provider") };
+    case "cover:complete":
+      return { label: "Cover image ready", detail: stringValue("source") };
+    case "workflow:complete":
+      return {
+        label: `Agent workflow complete for ${stringValue("gameName") ?? "game"}`,
+        detail: stringValue("verificationConclusion"),
+      };
+    case "response:success":
+      return { label: "Packaging generated files" };
+    default:
+      if (event.endsWith(":visibleProcess") && typeof details.step === "string") {
+        return { label: details.step };
+      }
+      return null;
+  }
 }
 
 export function AiGameCreator() {
@@ -71,6 +163,7 @@ export function AiGameCreator() {
   const [draft, setDraft] = useState<DraftGame | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStatus, setGenerationStatus] = useState("");
+  const [agentProgress, setAgentProgress] = useState<AgentProgressItem[]>([]);
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [submitOpen, setSubmitOpen] = useState(false);
   const [submitName, setSubmitName] = useState("");
@@ -107,6 +200,68 @@ export function AiGameCreator() {
     return payload.storageId;
   };
 
+  const addAgentProgress = (eventName: string, details?: Record<string, unknown>) => {
+    const formatted = formatAgentProgress(eventName, details);
+    if (!formatted) return;
+    setGenerationStatus(formatted.label);
+    setAgentProgress((current) => {
+      const nextItem = { id: makeId(), ...formatted };
+      const last = current[current.length - 1];
+      if (last?.label === nextItem.label && last.detail === nextItem.detail) return current;
+      return [...current, nextItem].slice(-12);
+    });
+  };
+
+  const readGenerationStream = async (response: Response) => {
+    if (!response.body) {
+      throw new Error("Game generation stream was unavailable.");
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let completedDraft: DraftGame | null = null;
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const streamEvent = JSON.parse(line) as AgentStreamEvent;
+
+        if (streamEvent.type === "progress") {
+          addAgentProgress(streamEvent.event, streamEvent.details);
+        } else if (streamEvent.type === "complete") {
+          completedDraft = streamEvent.draft;
+        } else if (streamEvent.type === "error") {
+          throw new Error(streamEvent.error);
+        }
+      }
+    }
+
+    if (buffer.trim()) {
+      const streamEvent = JSON.parse(buffer) as AgentStreamEvent;
+      if (streamEvent.type === "complete") {
+        completedDraft = streamEvent.draft;
+      } else if (streamEvent.type === "error") {
+        throw new Error(streamEvent.error);
+      } else if (streamEvent.type === "progress") {
+        addAgentProgress(streamEvent.event, streamEvent.details);
+      }
+    }
+
+    if (!completedDraft) {
+      throw new Error("Game generation finished without a draft.");
+    }
+
+    return completedDraft;
+  };
+
   const generateGame = async (event?: React.FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
     const nextPrompt = prompt.trim();
@@ -121,6 +276,12 @@ export function AiGameCreator() {
     setPrompt("");
     setIsGenerating(true);
     setGenerationStatus(draft ? "Editing game" : "Generating game");
+    setAgentProgress([
+      {
+        id: makeId(),
+        label: draft ? "Editing game" : "Generating game",
+      },
+    ]);
 
     try {
       const response = await fetch("/api/games/generate", {
@@ -129,48 +290,36 @@ export function AiGameCreator() {
         body: JSON.stringify({
           prompt: nextPrompt,
           previousHtml: draft?.html,
+          stream: true,
         }),
       });
 
-      const payload = await response.json();
       if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
         throw new Error(payload.error || "Game generation failed.");
       }
 
-      const nextDraft: DraftGame = {
-        gameName: payload.gameName,
-        fileName: payload.fileName,
-        html: payload.html,
-        imageUrl: payload.imageUrl,
-        imageSource: payload.imageSource,
-        imageNote: payload.imageNote,
-        prompt: nextPrompt,
-        designDocument: payload.designDocument,
-        visibleProcess: payload.visibleProcess,
-        verificationConclusion: payload.verificationConclusion,
-        verificationReasons: payload.verificationReasons,
-        skillPath: payload.skillPath,
-        openAiModel: payload.openAiModel,
-      };
+      const nextDraft = await readGenerationStream(response);
+      nextDraft.prompt = nextPrompt;
 
       setDraft(nextDraft);
-      setSubmitName(payload.gameName);
+      setSubmitName(nextDraft.gameName);
       setSubmitImageFile(null);
       const trace = [
-        `Model: ${payload.openAiModel}`,
-        `Skill: ${payload.skillPath}`,
-        ...(Array.isArray(payload.visibleProcess) ? payload.visibleProcess : []),
-        `Verification: ${payload.verificationConclusion}`,
-        ...(Array.isArray(payload.verificationReasons) ? payload.verificationReasons : []),
+        `Model: ${nextDraft.openAiModel}`,
+        `Skill: ${nextDraft.skillPath}`,
+        ...(Array.isArray(nextDraft.visibleProcess) ? nextDraft.visibleProcess : []),
+        `Verification: ${nextDraft.verificationConclusion}`,
+        ...(Array.isArray(nextDraft.verificationReasons) ? nextDraft.verificationReasons : []),
       ];
       setMessages((current) => [
         ...current,
         {
           id: makeId(),
           role: "assistant",
-          content: payload.imageNote
-            ? `Generated ${payload.gameName}. ${payload.imageNote}`
-            : `Generated ${payload.gameName}. Preview it, submit it, or keep editing by chat.`,
+          content: nextDraft.imageNote
+            ? `Generated ${nextDraft.gameName}. ${nextDraft.imageNote}`
+            : `Generated ${nextDraft.gameName}. Preview it, submit it, or keep editing by chat.`,
           details: trace,
         },
       ]);
@@ -205,6 +354,8 @@ export function AiGameCreator() {
     try {
       const htmlBlob = new Blob([draft.html], { type: "text/html;charset=utf-8" });
       const htmlId = await uploadBlob(htmlBlob, "text/html;charset=utf-8");
+      const analysisBlob = new Blob([draft.analysisMarkdown], { type: "text/markdown;charset=utf-8" });
+      const analysisId = await uploadBlob(analysisBlob, "text/markdown;charset=utf-8");
 
       let imageBlob: Blob;
       if (submitImageFile) {
@@ -221,8 +372,12 @@ export function AiGameCreator() {
 
       await createGame({
         name,
+        slug: draft.slug,
         prompt: draft.prompt,
         htmlId: htmlId as Id<"_storage">,
+        analysisId: analysisId as Id<"_storage">,
+        htmlFileName: draft.fileName,
+        analysisFileName: draft.analysisFileName,
         imageId: imageId as Id<"_storage">,
       });
 
@@ -256,12 +411,11 @@ export function AiGameCreator() {
     }
   };
 
-  const downloadDraft = () => {
-    if (!draft) return;
-    const objectUrl = dataUrlToBlobUrl(draft.html);
+  const downloadBlob = (content: string, fileName: string, contentType: string) => {
+    const objectUrl = URL.createObjectURL(new Blob([content], { type: contentType }));
     const link = document.createElement("a");
     link.href = objectUrl;
-    link.download = draft.fileName;
+    link.download = fileName;
     link.rel = "noopener";
     document.body.appendChild(link);
     link.click();
@@ -269,11 +423,22 @@ export function AiGameCreator() {
     URL.revokeObjectURL(objectUrl);
   };
 
+  const downloadDraftHtml = () => {
+    if (!draft) return;
+    downloadBlob(draft.html, draft.fileName, "text/html;charset=utf-8");
+  };
+
+  const downloadDraftAnalysis = () => {
+    if (!draft) return;
+    downloadBlob(draft.analysisMarkdown, draft.analysisFileName, "text/markdown;charset=utf-8");
+  };
+
   const returnToGameHome = () => {
     setPrompt("");
     setMessages([]);
     setDraft(null);
     setGenerationStatus("");
+    setAgentProgress([]);
     setPreviewHtml(null);
     setSubmitOpen(false);
     setSubmitName("");
@@ -324,17 +489,10 @@ export function AiGameCreator() {
                   </div>
                   <div className="game-result-card__body">
                     <h2>{draft.gameName}</h2>
-                    <p>{draft.fileName}</p>
+                    <p>{draft.analysisFileName} + {draft.fileName}</p>
                     <details className="game-result-card__details">
-                      <summary>Design document</summary>
-                      <dl>
-                        {Object.entries(draft.designDocument).map(([key, value]) => (
-                          <div key={key}>
-                            <dt>{key}</dt>
-                            <dd>{value}</dd>
-                          </div>
-                        ))}
-                      </dl>
+                      <summary>Analysis markdown</summary>
+                      <pre>{draft.analysisMarkdown}</pre>
                     </details>
                     <div className="game-result-card__actions">
                       <button type="button" onClick={() => setPreviewHtml(draft.html)}>
@@ -343,7 +501,10 @@ export function AiGameCreator() {
                       <button type="button" onClick={() => setSubmitOpen(true)} disabled={!canSubmit}>
                         Submit
                       </button>
-                      <button type="button" onClick={downloadDraft}>
+                      <button type="button" onClick={downloadDraftAnalysis}>
+                        Save MD
+                      </button>
+                      <button type="button" onClick={downloadDraftHtml}>
                         Save HTML
                       </button>
                     </div>
@@ -353,8 +514,20 @@ export function AiGameCreator() {
 
               {isGenerating && (
                 <div className="game-chat__loading" role="status">
-                  <LoaderCircle size={20} />
-                  <span>{generationStatus}</span>
+                  <div className="game-chat__loading-heading">
+                    <LoaderCircle size={20} />
+                    <span>{generationStatus}</span>
+                  </div>
+                  {agentProgress.length > 0 && (
+                    <ol className="game-agent-progress" aria-label="Agent progress">
+                      {agentProgress.map((item) => (
+                        <li key={item.id}>
+                          <span>{item.label}</span>
+                          {item.detail && <small>{item.detail}</small>}
+                        </li>
+                      ))}
+                    </ol>
+                  )}
                 </div>
               )}
             </div>
@@ -426,6 +599,11 @@ export function AiGameCreator() {
                       {game.htmlUrl && (
                         <Link href={game.htmlUrl} target="_blank" rel="noopener">
                           <ExternalLink size={16} />
+                        </Link>
+                      )}
+                      {game.analysisUrl && (
+                        <Link href={game.analysisUrl} target="_blank" rel="noopener" title={game.analysisFileName || "Analysis"}>
+                          MD
                         </Link>
                       )}
                     </div>
