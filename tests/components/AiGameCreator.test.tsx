@@ -9,6 +9,7 @@ const mockUseMutation = jest.fn();
 const mockLikeGame = jest.fn();
 const mockGenerateUploadUrl = jest.fn();
 const mockCreateGame = jest.fn();
+const mockDeleteGame = jest.fn();
 
 jest.mock("convex/react", () => ({
   useConvexAuth: () => mockUseConvexAuth(),
@@ -95,7 +96,8 @@ describe("AiGameCreator", () => {
     mockUseMutation
       .mockReturnValueOnce(mockLikeGame)
       .mockReturnValueOnce(mockGenerateUploadUrl)
-      .mockReturnValueOnce(mockCreateGame);
+      .mockReturnValueOnce(mockCreateGame)
+      .mockReturnValueOnce(mockDeleteGame);
   });
 
   afterAll(() => {
@@ -315,5 +317,32 @@ describe("AiGameCreator", () => {
     expect(screen.queryByText("Intent: GREETING")).not.toBeInTheDocument();
     expect(screen.queryByText("Classified the message as a greeting.")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Generated game result")).not.toBeInTheDocument();
+  });
+
+  it("lets admins delete published games after confirmation", async () => {
+    jest.spyOn(window, "confirm").mockReturnValueOnce(true);
+    mockUseQuery
+      .mockReturnValueOnce([
+        {
+          _id: "game-1",
+          name: "Delete Me",
+          prompt: "make a puzzle",
+          createdAt: Date.UTC(2026, 0, 1),
+          likes: 3,
+          htmlUrl: "https://example.com/game.html",
+          analysisUrl: null,
+          imageUrl: null,
+        },
+      ])
+      .mockReturnValueOnce({ role: "admin" });
+
+    renderGameCreator();
+
+    fireEvent.click(screen.getByLabelText("Delete Delete Me"));
+
+    await waitFor(() => {
+      expect(mockDeleteGame).toHaveBeenCalledWith({ gameId: "game-1" });
+    });
+    expect(window.confirm).toHaveBeenCalledWith('Delete "Delete Me"? This cannot be undone.');
   });
 });

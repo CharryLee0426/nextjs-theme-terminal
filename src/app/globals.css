@@ -2998,6 +2998,17 @@ a:hover {
   display: none;
 }
 
+.published-game-card__actions .published-game-card__delete {
+  border-color: rgba(255, 92, 92, 0.55);
+  color: #ff8f8f;
+}
+
+.published-game-card__actions .published-game-card__delete:hover:not(:disabled) {
+  border-color: #ff8f8f;
+  color: var(--background);
+  background: #ff8f8f;
+}
+
 .game-preview-modal,
 .game-submit-modal {
   position: fixed;

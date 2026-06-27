@@ -9,6 +9,7 @@ import {
   Heart,
   LoaderCircle,
   Send,
+  Trash2,
   Upload,
   X,
 } from "lucide-react";
@@ -184,9 +185,11 @@ export function AiGameCreator() {
   const toast = useAppToast();
   const { isLoading: authLoading, isAuthenticated } = useConvexAuth();
   const games = useQuery(api.games.listPublished) as PublishedGame[] | undefined;
+  const viewer = useQuery(api.account.viewer);
   const likeGame = useMutation(api.games.like);
   const generateUploadUrl = useMutation(api.games.generateUploadUrl);
   const createGame = useMutation(api.games.createGame);
+  const deleteGame = useMutation(api.games.deleteGame);
   const [prompt, setPrompt] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState<DraftGame | null>(null);
@@ -199,9 +202,11 @@ export function AiGameCreator() {
   const [submitImageFile, setSubmitImageFile] = useState<File | null>(null);
   const [submitImagePreviewUrl, setSubmitImagePreviewUrl] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [deletingGameId, setDeletingGameId] = useState<Id<"games"> | null>(null);
 
   const isConversation = messages.length > 0;
   const canSubmit = Boolean(draft) && !isSubmitting && !authLoading;
+  const canDeleteGames = viewer != null && viewer.role === "admin";
   const sortedGames = useMemo(() => games ?? [], [games]);
 
   useEffect(() => {
@@ -472,6 +477,22 @@ export function AiGameCreator() {
     }
   };
 
+  const deletePublishedGame = async (game: PublishedGame) => {
+    if (deletingGameId) return;
+    const confirmed = window.confirm(`Delete "${game.name}"? This cannot be undone.`);
+    if (!confirmed) return;
+
+    setDeletingGameId(game._id);
+    try {
+      await deleteGame({ gameId: game._id });
+      toast.show("Game deleted.", "info");
+    } catch (error) {
+      toast.show(error instanceof Error ? error.message : "Game deletion failed.", "error");
+    } finally {
+      setDeletingGameId(null);
+    }
+  };
+
   const downloadBlob = (content: string, fileName: string, contentType: string) => {
     const objectUrl = URL.createObjectURL(new Blob([content], { type: contentType }));
     const link = document.createElement("a");
@@ -666,6 +687,22 @@ export function AiGameCreator() {
                         <Link href={game.analysisUrl} target="_blank" rel="noopener" title={game.analysisFileName || "Analysis"}>
                           MD
                         </Link>
+                      )}
+                      {canDeleteGames && (
+                        <button
+                          type="button"
+                          className="published-game-card__delete"
+                          onClick={() => void deletePublishedGame(game)}
+                          disabled={deletingGameId === game._id}
+                          aria-label={`Delete ${game.name}`}
+                          title="Delete game"
+                        >
+                          {deletingGameId === game._id ? (
+                            <LoaderCircle size={16} />
+                          ) : (
+                            <Trash2 size={16} />
+                          )}
+                        </button>
                       )}
                     </div>
                   </div>
