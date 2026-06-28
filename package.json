@@ -10,7 +10,9 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "convex:generate-auth-keys": "node scripts/generate-convex-auth-keys.mjs",
-    "convex:apply-auth-keys": "node scripts/generate-convex-auth-keys.mjs --apply"
+    "convex:apply-auth-keys": "node scripts/generate-convex-auth-keys.mjs --apply",
+    "skill:update-html-minigame": "node scripts/update-html-minigame-skill.mjs",
+    "skill:update-html-minigame:default": "node scripts/update-html-minigame-skill.mjs --default"
   },
   "dependencies": {
     "@auth/core": "^0.37.0",
@@ -33,6 +35,7 @@
     "lucide-react": "^0.545.0",
     "next": "15.5.9",
     "next-mdx-remote": "^6.0.0",
+    "openai": "^6.44.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "reading-time": "^1.5.0",
