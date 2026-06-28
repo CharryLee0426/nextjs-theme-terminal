@@ -2729,8 +2729,27 @@ a:hover {
   background: rgba(42, 45, 42, 0.78);
 }
 
-.game-message p {
+.game-message__content {
+  overflow-wrap: anywhere;
+}
+
+.game-message__content p {
   margin: 0;
+}
+
+.game-message__content p + p {
+  margin-top: 10px;
+}
+
+.game-message__content a {
+  color: var(--terminal-blue);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.game-message__content strong {
+  color: var(--terminal-yellow);
+  font-weight: 700;
 }
 
 .game-message__details {

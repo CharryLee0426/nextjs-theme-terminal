@@ -374,6 +374,42 @@ describe("AiGameCreator", () => {
     expect(screen.queryByLabelText("Generated game result")).not.toBeInTheDocument();
   });
 
+  it("renders assistant markdown links and emphasis in chat replies", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(
+      ndjsonResponse([
+        {
+          type: "reply",
+          reply: {
+            generated: false,
+            intent: "HARMLESS_QUESTION",
+            message:
+              "I couldn't verify final results for **Sunday, June 28, 2026** yet. ([fifa.com](https://www.fifa.com/en/tournaments/mens/worldcup))",
+            visibleProcess: [],
+            openAiModel: "gpt-5.4-mini",
+          },
+        },
+      ]),
+    );
+
+    renderGameCreator();
+
+    fireEvent.change(screen.getByLabelText("Game prompt"), {
+      target: { value: "world cup scores?" },
+    });
+    fireEvent.click(screen.getByLabelText("Generate game"));
+
+    const link = await screen.findByRole("link", { name: "fifa.com" });
+    expect(link).toHaveAttribute(
+      "href",
+      "https://www.fifa.com/en/tournaments/mens/worldcup",
+    );
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(
+      screen.getByText("Sunday, June 28, 2026", { selector: "strong" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/\*\*Sunday, June 28, 2026\*\*/)).not.toBeInTheDocument();
+  });
+
   it("lets admins delete published games after confirmation", async () => {
     jest.spyOn(window, "confirm").mockReturnValueOnce(true);
     mockUseQuery

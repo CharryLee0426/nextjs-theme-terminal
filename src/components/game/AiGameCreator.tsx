@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
+import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppToast } from "@/components/ToastProvider";
 import { api } from "../../../convex/_generated/api";
@@ -179,6 +180,81 @@ function formatAgentProgress(
       }
       return null;
   }
+}
+
+function safeMarkdownHref(href: string) {
+  try {
+    const url = new URL(href);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+function renderInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  const tokenPattern = /(\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|\*\*([^*\n]+)\*\*)/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = tokenPattern.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push(text.slice(lastIndex, match.index));
+    }
+
+    const [, rawToken, linkText, rawHref, strongText] = match;
+    if (linkText && rawHref) {
+      const href = safeMarkdownHref(rawHref);
+      if (href) {
+        nodes.push(
+          <a
+            key={`${keyPrefix}-link-${match.index}`}
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {linkText}
+          </a>,
+        );
+      } else {
+        nodes.push(rawToken);
+      }
+    } else if (strongText) {
+      nodes.push(<strong key={`${keyPrefix}-strong-${match.index}`}>{strongText}</strong>);
+    } else {
+      nodes.push(rawToken);
+    }
+
+    lastIndex = match.index + rawToken.length;
+  }
+
+  if (lastIndex < text.length) {
+    nodes.push(text.slice(lastIndex));
+  }
+
+  return nodes.length > 0 ? nodes : [text];
+}
+
+function ChatMessageContent({ content }: { content: string }) {
+  const paragraphs = content.split(/\n{2,}/);
+
+  return (
+    <div className="game-message__content">
+      {paragraphs.map((paragraph, paragraphIndex) => {
+        const lines = paragraph.split("\n");
+        return (
+          <p key={`${paragraphIndex}-${paragraph.slice(0, 12)}`}>
+            {lines.map((line, lineIndex) => (
+              <span key={`${paragraphIndex}-${lineIndex}`}>
+                {lineIndex > 0 && <br />}
+                {renderInlineMarkdown(line, `${paragraphIndex}-${lineIndex}`)}
+              </span>
+            ))}
+          </p>
+        );
+      })}
+    </div>
+  );
 }
 
 export function AiGameCreator() {
@@ -574,7 +650,7 @@ export function AiGameCreator() {
                   key={message.id}
                   className={message.role === "user" ? "game-message game-message--user" : "game-message game-message--assistant"}
                 >
-                  <p>{message.content}</p>
+                  <ChatMessageContent content={message.content} />
                   {message.details && message.details.length > 0 && (
                     <ol className="game-message__details">
                       {message.details.map((detail) => (
