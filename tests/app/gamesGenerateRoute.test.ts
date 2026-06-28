@@ -8,11 +8,24 @@ import {
   classifyGameRequest,
   generateGameWithAgents,
 } from "@/lib/gameCreator/agents";
+import { generateGameWithOpenAISkill } from "@/lib/gameCreator/skillGeneration";
 
 jest.mock("@/lib/gameCreator/agents", () => ({
   answerUnrelatedHarmlessQuestion: jest.fn(),
   classifyGameRequest: jest.fn(),
   generateGameWithAgents: jest.fn(),
+  normalizeSlug: jest.fn((slug: string) => slug),
+  slugify: jest.fn((value: string) =>
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 48) || "ai-game",
+  ),
+}));
+
+jest.mock("@/lib/gameCreator/skillGeneration", () => ({
+  generateGameWithOpenAISkill: jest.fn(),
 }));
 
 jest.mock("@fal-ai/client", () => ({
@@ -31,6 +44,10 @@ const mockedClassifyGameRequest = classifyGameRequest as jest.MockedFunction<
 const mockedAnswerUnrelatedHarmlessQuestion =
   answerUnrelatedHarmlessQuestion as jest.MockedFunction<
     typeof answerUnrelatedHarmlessQuestion
+  >;
+const mockedGenerateGameWithOpenAISkill =
+  generateGameWithOpenAISkill as jest.MockedFunction<
+    typeof generateGameWithOpenAISkill
   >;
 const originalEnv = process.env;
 const consoleInfoSpy = jest.spyOn(console, "info").mockImplementation(() => {});
@@ -61,6 +78,9 @@ describe("games generate API route", () => {
       ...originalEnv,
       OPENAI_API_KEY: "test-openai-key",
       OPENAI_GAME_MODEL: "gpt-5.4-mini",
+      OPENAI_GAME_GENERATION_MODE: "",
+      OPENAI_HTML_MINIGAME_SKILL_ID: "skill_test",
+      OPENAI_HTML_MINIGAME_SKILL_VERSION: "1",
       FAL_KEY: "",
       FAL_API_KEY: "",
     };
@@ -90,6 +110,27 @@ describe("games generate API route", () => {
       });
       return draft;
     });
+    mockedGenerateGameWithOpenAISkill.mockResolvedValue({
+      html: [
+        "<!doctype html>",
+        "<html>",
+        "<head><title>Skill Runner</title><style>body{margin:0}</style></head>",
+        "<body><button>Restart</button><script>let score=0;</script></body>",
+        "</html>",
+      ].join(""),
+      rawText: [
+        "Built Skill Runner.",
+        "```html",
+        "<!doctype html><html><head><title>Skill Runner</title><style>body{margin:0}</style></head><body><button>Restart</button><script>let score=0;</script></body></html>",
+        "```",
+      ].join("\n"),
+      metadata: {
+        responseId: "resp_skill",
+        model: "gpt-5.5",
+        skillId: "skill_test",
+        skillVersion: "1",
+      },
+    });
   });
 
   afterAll(() => {
@@ -117,6 +158,7 @@ describe("games generate API route", () => {
         logger: expect.any(Function),
       }),
     );
+    expect(mockedGenerateGameWithOpenAISkill).not.toHaveBeenCalled();
   });
 
   it("passes previous HTML and game metadata through edit requests", async () => {
@@ -357,5 +399,50 @@ describe("games generate API route", () => {
       error: "Missing OPENAI_API_KEY environment variable.",
     });
     expect(mockedGenerateGameWithAgents).not.toHaveBeenCalled();
+  });
+
+  it("chooses the OpenAI skill path when OPENAI_GAME_GENERATION_MODE is skill", async () => {
+    process.env = {
+      ...process.env,
+      OPENAI_GAME_GENERATION_MODE: "skill",
+      OPENAI_GAME_MODEL: "gpt-5.5",
+    };
+
+    const response = await POST(makeRequest({ prompt: "make a skill runner" }));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      gameName: "Skill Runner",
+      slug: "skill-runner",
+      fileName: "skill-runner.html",
+      analysisFileName: "skill-runner_analysis.md",
+      imageSource: "fallback",
+      openAiModel: "gpt-5.5",
+      verificationConclusion: "PASS",
+    });
+    expect(mockedGenerateGameWithOpenAISkill).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: "make a skill runner",
+        mode: "create",
+        intent: expect.objectContaining({
+          intent: "RELATED_WITHIN_CAPABILITY",
+        }),
+      }),
+    );
+    expect(mockedGenerateGameWithAgents).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the legacy builder path when generation mode is not set", async () => {
+    process.env = { ...process.env, OPENAI_GAME_GENERATION_MODE: "" };
+
+    const response = await POST(makeRequest({ prompt: "make a legacy runner" }));
+
+    expect(response.status).toBe(200);
+    expect(mockedGenerateGameWithAgents).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: "make a legacy runner",
+      }),
+    );
+    expect(mockedGenerateGameWithOpenAISkill).not.toHaveBeenCalled();
   });
 });

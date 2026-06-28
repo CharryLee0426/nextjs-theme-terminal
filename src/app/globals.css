@@ -3014,31 +3014,39 @@ a:hover {
   position: fixed;
   inset: 0;
   z-index: 600;
-  display: grid;
-  place-items: center;
   padding: 22px;
   background: rgba(0, 0, 0, 0.72);
 }
 
-.game-preview-modal__window {
-  position: relative;
-  width: min(1180px, 100%);
-  height: min(820px, 92vh);
+.game-preview-modal {
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+}
+
+.game-submit-modal {
   display: grid;
   place-items: center;
-  padding: 58px 18px 18px;
+}
+
+.game-preview-modal__window {
+  position: relative;
+  width: min(1440px, 100%);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 18px;
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  overflow: auto;
+  overflow: hidden;
   background: #05070f;
   box-shadow: 0 24px 90px rgba(0, 0, 0, 0.58);
 }
 
 .game-preview-modal__stage {
-  width: min(100%, 1120px);
-  aspect-ratio: 16 / 9;
-  display: grid;
-  place-items: center;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
@@ -3048,6 +3056,7 @@ a:hover {
 .game-preview-modal__stage iframe {
   width: 100%;
   height: 100%;
+  display: block;
   border: 0;
   background: #111827;
 }

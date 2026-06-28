@@ -76,6 +76,27 @@ function renderGameCreator() {
   );
 }
 
+function makeDraft(overrides: Record<string, unknown> = {}) {
+  return {
+    gameName: "Test Runner",
+    slug: "test-runner",
+    fileName: "test-runner.html",
+    analysisFileName: "test-runner_analysis.md",
+    analysisMarkdown: "# Test Runner\n\nDesign notes",
+    html: "<!DOCTYPE html><html><body><canvas></canvas><script></script></body></html>",
+    imageUrl: "data:image/svg+xml,test",
+    imageSource: "fallback",
+    imageNote: null,
+    prompt: "",
+    visibleProcess: [],
+    verificationConclusion: "PASS",
+    verificationReasons: [],
+    skillPath: "src/lib/gameCreator/html-minigame/SKILL.md",
+    openAiModel: "gpt-5.4-mini",
+    ...overrides,
+  };
+}
+
 beforeAll(() => {
   if (typeof TextEncoder === "undefined") {
     global.TextEncoder = NodeTextEncoder as typeof TextEncoder;
@@ -282,6 +303,40 @@ describe("AiGameCreator", () => {
       expect(screen.getAllByText("agent failed").length).toBeGreaterThan(0);
     });
     expect(screen.queryByRole("heading", { name: "Test Runner" })).not.toBeInTheDocument();
+  });
+
+  it("opens generated games in a focusable playable preview iframe", async () => {
+    const focusSpy = jest.spyOn(HTMLElement.prototype, "focus").mockImplementation();
+    try {
+      (global.fetch as jest.Mock).mockResolvedValueOnce(
+        ndjsonResponse([
+          {
+            type: "complete",
+            draft: makeDraft(),
+          },
+        ]),
+      );
+
+      renderGameCreator();
+
+      fireEvent.change(screen.getByLabelText("Game prompt"), {
+        target: { value: "make a runner" },
+      });
+      fireEvent.click(screen.getByLabelText("Generate game"));
+
+      await screen.findByRole("heading", { name: "Test Runner" });
+      fireEvent.click(screen.getByText("Preview"));
+
+      const frame = screen.getByTitle("Generated game preview");
+      expect(frame).toHaveAttribute("tabindex", "0");
+      expect(frame).toHaveAttribute("sandbox", "allow-scripts allow-pointer-lock");
+      expect(frame).toHaveAttribute("allow", "gamepad; fullscreen");
+
+      fireEvent.load(frame);
+      expect(focusSpy).toHaveBeenCalled();
+    } finally {
+      focusSpy.mockRestore();
+    }
   });
 
   it("renders classified assistant replies without a generated game card", async () => {

@@ -78,7 +78,7 @@ const verificationSchema = z.object({
   visibleProcess: z.array(z.string()).default([]),
 });
 
-function slugify(value: string) {
+export function slugify(value: string) {
   return (
     value
       .toLowerCase()
@@ -88,12 +88,12 @@ function slugify(value: string) {
   );
 }
 
-function normalizeSlug(slug: string, gameName: string) {
+export function normalizeSlug(slug: string, gameName: string) {
   const normalized = slugify(slug);
   return normalized === "ai-game" ? slugify(gameName) : normalized;
 }
 
-function assertCompleteHtml(html: string) {
+export function assertCompleteHtml(html: string) {
   const lower = html.toLowerCase();
   if (!lower.includes("<!doctype html") || !lower.includes("<html")) {
     throw new Error("Generated game did not include a complete HTML document.");
