@@ -9,6 +9,7 @@ const mockUseMutation = jest.fn();
 const mockLikeGame = jest.fn();
 const mockGenerateUploadUrl = jest.fn();
 const mockCreateGame = jest.fn();
+const mockDeleteGame = jest.fn();
 
 jest.mock("convex/react", () => ({
   useConvexAuth: () => mockUseConvexAuth(),
@@ -75,6 +76,27 @@ function renderGameCreator() {
   );
 }
 
+function makeDraft(overrides: Record<string, unknown> = {}) {
+  return {
+    gameName: "Test Runner",
+    slug: "test-runner",
+    fileName: "test-runner.html",
+    analysisFileName: "test-runner_analysis.md",
+    analysisMarkdown: "# Test Runner\n\nDesign notes",
+    html: "<!DOCTYPE html><html><body><canvas></canvas><script></script></body></html>",
+    imageUrl: "data:image/svg+xml,test",
+    imageSource: "fallback",
+    imageNote: null,
+    prompt: "",
+    visibleProcess: [],
+    verificationConclusion: "PASS",
+    verificationReasons: [],
+    skillPath: "src/lib/gameCreator/html-minigame/SKILL.md",
+    openAiModel: "gpt-5.4-mini",
+    ...overrides,
+  };
+}
+
 beforeAll(() => {
   if (typeof TextEncoder === "undefined") {
     global.TextEncoder = NodeTextEncoder as typeof TextEncoder;
@@ -95,7 +117,8 @@ describe("AiGameCreator", () => {
     mockUseMutation
       .mockReturnValueOnce(mockLikeGame)
       .mockReturnValueOnce(mockGenerateUploadUrl)
-      .mockReturnValueOnce(mockCreateGame);
+      .mockReturnValueOnce(mockCreateGame)
+      .mockReturnValueOnce(mockDeleteGame);
   });
 
   afterAll(() => {
@@ -188,6 +211,79 @@ describe("AiGameCreator", () => {
     });
   });
 
+  it("sends existing draft metadata when asking for game edits", async () => {
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce(
+        ndjsonResponse([
+          {
+            type: "complete",
+            draft: {
+              gameName: "Test Runner",
+              slug: "test-runner",
+              fileName: "test-runner.html",
+              analysisFileName: "test-runner_analysis.md",
+              analysisMarkdown: "# Test Runner\n\nDesign notes",
+              html: "<!DOCTYPE html><html><body><script></script></body></html>",
+              imageUrl: "data:image/svg+xml,test",
+              imageSource: "fallback",
+              imageNote: null,
+              prompt: "",
+              visibleProcess: [],
+              verificationConclusion: "PASS",
+              verificationReasons: [],
+              skillPath: "src/lib/gameCreator/html-minigame/SKILL.md",
+              openAiModel: "gpt-5.4-mini",
+            },
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        ndjsonResponse([
+          {
+            type: "reply",
+            reply: {
+              generated: false,
+              intent: "GREETING",
+              message: "Edit received.",
+              visibleProcess: [],
+              openAiModel: "gpt-5.4-mini",
+            },
+          },
+        ]),
+      );
+
+    renderGameCreator();
+
+    fireEvent.change(screen.getByLabelText("Game prompt"), {
+      target: { value: "make a runner" },
+    });
+    fireEvent.click(screen.getByLabelText("Generate game"));
+
+    await screen.findByRole("heading", { name: "Test Runner" });
+
+    fireEvent.change(screen.getByLabelText("Game prompt"), {
+      target: { value: "make the background space themed" },
+    });
+    fireEvent.click(screen.getByLabelText("Generate game"));
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+    });
+
+    expect(JSON.parse((global.fetch as jest.Mock).mock.calls[1][1].body)).toMatchObject({
+      prompt: "make the background space themed",
+      previousHtml: "<!DOCTYPE html><html><body><script></script></body></html>",
+      previousGame: {
+        gameName: "Test Runner",
+        slug: "test-runner",
+        fileName: "test-runner.html",
+        analysisFileName: "test-runner_analysis.md",
+        analysisMarkdown: "# Test Runner\n\nDesign notes",
+      },
+      stream: true,
+    });
+  });
+
   it("surfaces streamed generation errors in the conversation", async () => {
     (global.fetch as jest.Mock).mockResolvedValueOnce(
       ndjsonResponse([
@@ -207,5 +303,137 @@ describe("AiGameCreator", () => {
       expect(screen.getAllByText("agent failed").length).toBeGreaterThan(0);
     });
     expect(screen.queryByRole("heading", { name: "Test Runner" })).not.toBeInTheDocument();
+  });
+
+  it("opens generated games in a focusable playable preview iframe", async () => {
+    const focusSpy = jest.spyOn(HTMLElement.prototype, "focus").mockImplementation();
+    try {
+      (global.fetch as jest.Mock).mockResolvedValueOnce(
+        ndjsonResponse([
+          {
+            type: "complete",
+            draft: makeDraft(),
+          },
+        ]),
+      );
+
+      renderGameCreator();
+
+      fireEvent.change(screen.getByLabelText("Game prompt"), {
+        target: { value: "make a runner" },
+      });
+      fireEvent.click(screen.getByLabelText("Generate game"));
+
+      await screen.findByRole("heading", { name: "Test Runner" });
+      fireEvent.click(screen.getByText("Preview"));
+
+      const frame = screen.getByTitle("Generated game preview");
+      expect(frame).toHaveAttribute("tabindex", "0");
+      expect(frame).toHaveAttribute("sandbox", "allow-scripts allow-pointer-lock");
+      expect(frame).toHaveAttribute("allow", "gamepad; fullscreen");
+
+      fireEvent.load(frame);
+      expect(focusSpy).toHaveBeenCalled();
+    } finally {
+      focusSpy.mockRestore();
+    }
+  });
+
+  it("renders classified assistant replies without a generated game card", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(
+      ndjsonResponse([
+        { type: "progress", event: "intent:complete", details: { intent: "GREETING" } },
+        {
+          type: "reply",
+          reply: {
+            generated: false,
+            intent: "GREETING",
+            message:
+              "Hi! I can help you create browser-based HTML/CSS/JavaScript minigames.",
+            visibleProcess: ["Classified the message as a greeting."],
+            openAiModel: "gpt-5.4-mini",
+          },
+        },
+      ]),
+    );
+
+    renderGameCreator();
+
+    fireEvent.change(screen.getByLabelText("Game prompt"), {
+      target: { value: "Hi" },
+    });
+    fireEvent.click(screen.getByLabelText("Generate game"));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Hi! I can help you create browser-based HTML/CSS/JavaScript minigames."),
+      ).toBeInTheDocument();
+    });
+    expect(screen.queryByText("Intent: GREETING")).not.toBeInTheDocument();
+    expect(screen.queryByText("Classified the message as a greeting.")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Generated game result")).not.toBeInTheDocument();
+  });
+
+  it("renders assistant markdown links and emphasis in chat replies", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(
+      ndjsonResponse([
+        {
+          type: "reply",
+          reply: {
+            generated: false,
+            intent: "HARMLESS_QUESTION",
+            message:
+              "I couldn't verify final results for **Sunday, June 28, 2026** yet. ([fifa.com](https://www.fifa.com/en/tournaments/mens/worldcup))",
+            visibleProcess: [],
+            openAiModel: "gpt-5.4-mini",
+          },
+        },
+      ]),
+    );
+
+    renderGameCreator();
+
+    fireEvent.change(screen.getByLabelText("Game prompt"), {
+      target: { value: "world cup scores?" },
+    });
+    fireEvent.click(screen.getByLabelText("Generate game"));
+
+    const link = await screen.findByRole("link", { name: "fifa.com" });
+    expect(link).toHaveAttribute(
+      "href",
+      "https://www.fifa.com/en/tournaments/mens/worldcup",
+    );
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(
+      screen.getByText("Sunday, June 28, 2026", { selector: "strong" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/\*\*Sunday, June 28, 2026\*\*/)).not.toBeInTheDocument();
+  });
+
+  it("lets admins delete published games after confirmation", async () => {
+    jest.spyOn(window, "confirm").mockReturnValueOnce(true);
+    mockUseQuery
+      .mockReturnValueOnce([
+        {
+          _id: "game-1",
+          name: "Delete Me",
+          prompt: "make a puzzle",
+          createdAt: Date.UTC(2026, 0, 1),
+          likes: 3,
+          htmlUrl: "https://example.com/game.html",
+          analysisUrl: null,
+          imageUrl: null,
+        },
+      ])
+      .mockReturnValueOnce({ role: "admin" });
+
+    renderGameCreator();
+
+    fireEvent.click(screen.getByLabelText("Delete Delete Me"));
+
+    await waitFor(() => {
+      expect(mockDeleteGame).toHaveBeenCalledWith({ gameId: "game-1" });
+    });
+    expect(window.confirm).toHaveBeenCalledWith('Delete "Delete Me"? This cannot be undone.');
   });
 });

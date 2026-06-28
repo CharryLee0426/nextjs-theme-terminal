@@ -1,6 +1,17 @@
 import { ConvexError, v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, type MutationCtx } from "./_generated/server";
+
+async function requireGameAdmin(ctx: MutationCtx) {
+  const userId = await getAuthUserId(ctx);
+  if (userId === null) {
+    throw new ConvexError("Not signed in.");
+  }
+  const user = await ctx.db.get(userId);
+  if (user?.role !== "admin") {
+    throw new ConvexError("Games require administrator access.");
+  }
+}
 
 export const listPublished = query({
   args: {},
@@ -85,5 +96,24 @@ export const like = mutation({
       throw new ConvexError("Game not found.");
     }
     await ctx.db.patch(gameId, { likes: game.likes + 1 });
+  },
+});
+
+export const deleteGame = mutation({
+  args: { gameId: v.id("games") },
+  handler: async (ctx, { gameId }) => {
+    await requireGameAdmin(ctx);
+
+    const game = await ctx.db.get(gameId);
+    if (!game) {
+      throw new ConvexError("Game not found.");
+    }
+
+    await Promise.all([
+      ctx.storage.delete(game.htmlId),
+      game.analysisId ? ctx.storage.delete(game.analysisId) : Promise.resolve(),
+      ctx.storage.delete(game.imageId),
+    ]);
+    await ctx.db.delete(gameId);
   },
 });

@@ -2,15 +2,37 @@ import { fal } from "@fal-ai/client";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
-import { generateGameWithAgents } from "@/lib/gameCreator/agents";
+import {
+  answerUnrelatedHarmlessQuestion,
+  classifyGameRequest,
+  generateGameWithAgents,
+  normalizeSlug,
+  slugify,
+  type GeneratedGameArtifacts,
+  type PreviousGameContext,
+  type GameRequestIntent,
+} from "@/lib/gameCreator/agents";
+import {
+  generateGameWithOpenAISkill,
+  type GenerateGameWithOpenAISkillResult,
+} from "@/lib/gameCreator/skillGeneration";
 
 type GameGenerateRequest = {
   prompt?: string;
   previousHtml?: string;
+  previousGame?: PreviousGameContext;
   stream?: boolean;
 };
 
 type GenerationLogger = (event: string, details?: Record<string, unknown>) => void;
+
+type AssistantReplyPayload = {
+  generated: false;
+  intent: GameRequestIntent;
+  message: string;
+  visibleProcess: string[];
+  openAiModel: string;
+};
 
 const SKILL_PATH = path.join(
   process.cwd(),
@@ -112,6 +134,89 @@ function extractImageUrl(data: unknown): string | null {
   return null;
 }
 
+function getGenerationMode() {
+  return process.env.OPENAI_GAME_GENERATION_MODE === "skill" ? "skill" : "legacy";
+}
+
+function extractHtmlTitle(html: string) {
+  const match = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  return match?.[1]?.replace(/\s+/g, " ").trim() || null;
+}
+
+function stripHtmlFence(rawText: string) {
+  return rawText
+    .replace(/```html\s*\n[\s\S]*?```/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function buildSkillAnalysisMarkdown({
+  result,
+  prompt,
+  gameName,
+}: {
+  result: GenerateGameWithOpenAISkillResult;
+  prompt: string;
+  gameName: string;
+}) {
+  if (result.analysis?.trim()) return result.analysis.trim();
+  const summary = stripHtmlFence(result.rawText);
+  return [
+    `# ${gameName}`,
+    "",
+    "## Request",
+    prompt,
+    "",
+    "## Generation Notes",
+    summary || "Generated with the uploaded html-minigame OpenAI skill.",
+  ].join("\n");
+}
+
+function buildSkillDraft({
+  result,
+  prompt,
+  previousHtml,
+  previousGame,
+}: {
+  result: GenerateGameWithOpenAISkillResult;
+  prompt: string;
+  previousHtml?: string;
+  previousGame?: PreviousGameContext;
+}): GeneratedGameArtifacts {
+  const inferredGameName =
+    (previousHtml && previousGame?.gameName) ||
+    extractHtmlTitle(result.html) ||
+    "AI Mini Game";
+  const slug =
+    previousHtml && previousGame?.slug
+      ? normalizeSlug(previousGame.slug, inferredGameName)
+      : slugify(inferredGameName);
+  const fileName = previousHtml && previousGame?.fileName ? previousGame.fileName : `${slug}.html`;
+  const analysisFileName =
+    previousHtml && previousGame?.analysisFileName
+      ? previousGame.analysisFileName
+      : `${slug}_analysis.md`;
+
+  return {
+    gameName: inferredGameName,
+    slug,
+    fileName,
+    analysisFileName,
+    analysisMarkdown: buildSkillAnalysisMarkdown({
+      result,
+      prompt,
+      gameName: inferredGameName,
+    }),
+    html: result.html,
+    visibleProcess: [
+      "Generated the game with the uploaded html-minigame OpenAI skill.",
+      "Extracted and validated a standalone HTML document.",
+    ],
+    verificationConclusion: "PASS",
+    verificationReasons: ["assertCompleteHtml accepted the extracted standalone HTML."],
+  };
+}
+
 async function generateIntroImage(prompt: string, gameName: string) {
   const credentials = process.env.FAL_KEY || process.env.FAL_API_KEY;
   if (!credentials) {
@@ -144,10 +249,12 @@ async function generateIntroImage(prompt: string, gameName: string) {
 async function createGameDraft({
   prompt,
   previousHtml,
+  previousGame,
   logAgent,
 }: {
   prompt: string;
   previousHtml?: string;
+  previousGame?: PreviousGameContext;
   logAgent: GenerationLogger;
 }) {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -156,32 +263,102 @@ async function createGameDraft({
     throw new Error("Missing OPENAI_API_KEY environment variable.");
   }
 
-  logAgent("skill:load:start", {
-    skillPath: SKILL_DISPLAY_PATH,
-    analysisTemplatePath: "src/lib/gameCreator/html-minigame/reference/analysis-template.md",
-  });
-  const [skill, analysisTemplate] = await Promise.all([
-    readFile(SKILL_PATH, "utf8"),
-    readFile(ANALYSIS_TEMPLATE_PATH, "utf8"),
-  ]);
-  if (!skill.includes("Output contract") || !skill.includes("<slug>_analysis.md")) {
-    logAgent("skill:load:error", { error: "Malformed html-minigame skill." });
-    throw new Error("html-minigame skill is not available or is malformed.");
-  }
-  logAgent("skill:load:complete", {
-    skillChars: skill.length,
-    analysisTemplateChars: analysisTemplate.length,
-  });
-
-  const draft = await generateGameWithAgents({
+  const classification = await classifyGameRequest({
     apiKey,
     model: OPENAI_MODEL,
     prompt,
-    skill,
-    analysisTemplate,
     previousHtml,
     logger: logAgent,
   });
+
+  if (classification.intent !== "RELATED_WITHIN_CAPABILITY") {
+    const answer =
+      classification.intent === "UNRELATED_HARMLESS"
+        ? await answerUnrelatedHarmlessQuestion({
+            apiKey,
+            model: OPENAI_MODEL,
+            prompt,
+            logger: logAgent,
+          })
+        : null;
+    const response = answer?.response || classification.response;
+    const visibleProcess = [
+      ...classification.visibleProcess,
+      ...(answer?.visibleProcess ?? []),
+    ];
+
+    logAgent("response:assistant_reply", {
+      intent: classification.intent,
+      messageLength: response.length,
+    });
+
+    return {
+      generated: false,
+      intent: classification.intent,
+      message: response,
+      visibleProcess,
+      openAiModel: OPENAI_MODEL,
+    } satisfies AssistantReplyPayload;
+  }
+
+  const generationMode = getGenerationMode();
+  let draft: GeneratedGameArtifacts;
+  let openAiModel = OPENAI_MODEL;
+  if (generationMode === "skill") {
+    logAgent("skill_generation:start", {
+      mode: previousHtml ? "edit" : "create",
+      skillId: process.env.OPENAI_HTML_MINIGAME_SKILL_ID ? "configured" : "missing",
+      skillVersion: process.env.OPENAI_HTML_MINIGAME_SKILL_VERSION ?? "1",
+    });
+    const skillResult = await generateGameWithOpenAISkill({
+      prompt,
+      intent: classification,
+      previousHtml,
+      mode: previousHtml ? "edit" : "create",
+    });
+    openAiModel = String(skillResult.metadata?.model ?? process.env.OPENAI_GAME_MODEL ?? "gpt-5.5");
+    draft = buildSkillDraft({
+      result: skillResult,
+      prompt,
+      previousHtml,
+      previousGame,
+    });
+    logAgent("skill_generation:complete", {
+      gameName: draft.gameName,
+      fileName: draft.fileName,
+      htmlChars: draft.html.length,
+      responseId: skillResult.metadata?.responseId,
+      model: skillResult.metadata?.model,
+    });
+  } else {
+    logAgent("skill:load:start", {
+      skillPath: SKILL_DISPLAY_PATH,
+      analysisTemplatePath: "src/lib/gameCreator/html-minigame/reference/analysis-template.md",
+    });
+    const [skill, analysisTemplate] = await Promise.all([
+      readFile(SKILL_PATH, "utf8"),
+      readFile(ANALYSIS_TEMPLATE_PATH, "utf8"),
+    ]);
+    if (!skill.includes("Output contract") || !skill.includes("<slug>_analysis.md")) {
+      logAgent("skill:load:error", { error: "Malformed html-minigame skill." });
+      throw new Error("html-minigame skill is not available or is malformed.");
+    }
+    logAgent("skill:load:complete", {
+      skillChars: skill.length,
+      analysisTemplateChars: analysisTemplate.length,
+    });
+
+    draft = await generateGameWithAgents({
+      apiKey,
+      model: OPENAI_MODEL,
+      prompt,
+      skill,
+      analysisTemplate,
+      previousHtml,
+      previousGame,
+      logger: logAgent,
+    });
+  }
   logAgent("cover:start", {
     gameName: draft.gameName,
     provider: process.env.FAL_KEY || process.env.FAL_API_KEY ? "fal.ai" : "fallback",
@@ -200,12 +377,13 @@ async function createGameDraft({
   });
 
   return {
+    generated: true,
     ...draft,
     imageUrl: intro.imageUrl,
     imageSource: intro.source,
     imageNote: intro.note,
     skillPath: SKILL_DISPLAY_PATH,
-    openAiModel: OPENAI_MODEL,
+    openAiModel,
   };
 }
 
@@ -235,12 +413,20 @@ export async function POST(request: Request) {
               const payload = await createGameDraft({
                 prompt,
                 previousHtml: body.previousHtml,
+                previousGame: body.previousGame,
                 logAgent: streamLogger,
               });
-              writeStreamEvent(controller, {
-                type: "complete",
-                draft: payload,
-              });
+              if (payload.generated) {
+                writeStreamEvent(controller, {
+                  type: "complete",
+                  draft: payload,
+                });
+              } else {
+                writeStreamEvent(controller, {
+                  type: "reply",
+                  reply: payload,
+                });
+              }
             } catch (error) {
               const message = error instanceof Error ? error.message : "Game generation failed.";
               streamLogger("request:error", { error: message });
@@ -266,6 +452,7 @@ export async function POST(request: Request) {
     const payload = await createGameDraft({
       prompt,
       previousHtml: body.previousHtml,
+      previousGame: body.previousGame,
       logAgent,
     });
     return NextResponse.json(payload);

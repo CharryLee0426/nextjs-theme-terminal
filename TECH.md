@@ -185,11 +185,14 @@ AI Game Creator is a browser-game generation and publishing flow at **`/game`**.
     *   While generation is running, the client reads NDJSON progress events and displays a compact agent progress timeline. Events include skill loading, planning, building, verification, cover image generation, and concise `visibleProcess` summaries. Hidden chain-of-thought is not exposed.
     *   Assistant responses include user-visible generation steps, the OpenAI model, the vendored skill path, and verification status.
     *   After generation, the result card includes the intro image, generated analysis and HTML filenames, preview, submit, save-Markdown, save-HTML controls, and an expandable analysis Markdown document.
-    *   Additional prompts after the first generation pass the previous HTML back to the server so OpenAI can edit the current draft.
+    *   Additional prompts after the first generation pass the previous HTML plus draft metadata (`gameName`, `slug`, filenames, and analysis markdown) back to the server so the Agents SDK workflow can edit the current draft while preserving the existing game identity unless the user asks for a rename or redesign.
 *   **Game generation API**: `src/app/api/games/generate/route.ts`
-    *   Reads the vendored `html-minigame` skill from `src/lib/gameCreator/html-minigame/SKILL.md` and the analysis template from `src/lib/gameCreator/html-minigame/reference/analysis-template.md`. This avoids depending on local Codex or Claude skill paths, so the route works on Vercel.
-    *   Calls the OpenAI Agents SDK with `OPENAI_API_KEY`.
-    *   Uses `OPENAI_GAME_MODEL` when set, then `OPENAI_MODEL`, then defaults to `gpt-4.1-mini`.
+    *   Keeps intent classification, safety routing, NDJSON progress events, HTML validation, and the existing response shape.
+    *   In default legacy mode, reads the vendored `html-minigame` skill from `src/lib/gameCreator/html-minigame/SKILL.md` and the analysis template from `src/lib/gameCreator/html-minigame/reference/analysis-template.md`. This avoids depending on local Codex or Claude skill paths, so the route works on Vercel.
+    *   When `OPENAI_GAME_GENERATION_MODE=skill`, calls `generateGameWithOpenAISkill()` in `src/lib/gameCreator/skillGeneration.ts`. That path uses the OpenAI Responses API directly with a shell `container_auto` tool and `skill_reference` from `OPENAI_HTML_MINIGAME_SKILL_ID`.
+    *   The skill includes an edit contract: treat existing HTML as the current source of truth, preserve title/slug/core behavior by default, update the analysis markdown, and return a complete revised HTML file rather than a patch.
+    *   Calls OpenAI with `OPENAI_API_KEY`.
+    *   Legacy mode uses `OPENAI_GAME_MODEL` when set, then `OPENAI_MODEL`, then defaults to `gpt-4.1-mini`. Skill mode uses `OPENAI_GAME_MODEL`, defaulting to `gpt-5.5`.
     *   Runs three agents in sequence through `src/lib/gameCreator/agents.ts`:
         *   planner: produces concrete analysis Markdown for `<slug>_analysis.md`;
         *   builder: produces standalone `<slug>.html`;
@@ -197,6 +200,12 @@ AI Game Creator is a browser-game generation and publishing flow at **`/game`**.
     *   Returns normal JSON for legacy/non-stream callers. When the request includes `stream: true`, returns newline-delimited JSON (`application/x-ndjson`) progress events plus a final `complete` event containing the full draft.
     *   Validates that the returned HTML looks like a full document, contains embedded `<style>` and `<script>` blocks, and does not contain obvious external dependency loaders.
     *   Emits server console logs with request ids and the same observable progress events used by the frontend. These logs intentionally avoid hidden chain-of-thought.
+*   **Skill mode environment**:
+    *   `OPENAI_HTML_MINIGAME_SKILL_ID=skill_6a40208961188198ad19d4df039c20a40e193ab2fc8911f2`
+    *   `OPENAI_HTML_MINIGAME_SKILL_VERSION=1`
+    *   `OPENAI_GAME_MODEL=gpt-5.5`
+    *   `OPENAI_GAME_GENERATION_MODE=skill`
+    *   Pin the skill version in production to avoid silent behavior changes.
 *   **Intro image generation**:
     *   The same route uses fal.ai model `fal-ai/flux/schnell` to generate a game intro image from the prompt and generated game name.
     *   Credentials come from server-only `FAL_KEY` or `FAL_API_KEY`.

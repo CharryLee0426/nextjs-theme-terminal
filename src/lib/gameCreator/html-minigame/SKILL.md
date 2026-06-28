@@ -1,11 +1,12 @@
 ---
 name: html-minigame
-description: Generate a complete, playable minigame as a single standalone HTML file from a natural-language description. Produces a `<name>_analysis.md` design doc and a self-contained `<name>.html` with embedded CSS, JS, and inline SVG.
+description: Generate or edit a complete, playable minigame as a single standalone HTML file from a natural-language description. Produces a `<name>_analysis.md` design doc and a self-contained `<name>.html` with embedded CSS, JS, and inline SVG.
 ---
 
 # HTML Minigame Builder
 
-Turn a natural-language game idea into a polished, single-file browser minigame.
+Turn a natural-language game idea into a polished, single-file browser minigame,
+or revise an existing generated minigame from a user edit request.
 The output must feel like a small finished game, not a static demo.
 
 ## Output contract
@@ -19,6 +20,29 @@ lowercase kebab-case:
 Kebab-case rule: lowercase, spaces/punctuation -> single hyphens, strip other
 symbols. "Flappy Bird!" -> `flappy-bird`. Derive the slug once and reuse it for
 both filenames.
+
+## Edit contract
+
+When the user asks to edit an existing generated minigame, produce the same two
+artifact types again:
+
+1. `<slug>_analysis.md` - updated design document
+2. `<slug>.html` - complete revised standalone game
+
+Edit rules:
+
+- Treat the existing HTML as the current source of truth.
+- Preserve the existing game title, slug, core genre, controls, and scoring
+  unless the user explicitly asks to change them.
+- Apply the requested change as narrowly as practical while keeping the game
+  playable and coherent.
+- Return a complete HTML file, not a patch or partial snippet.
+- Update the analysis markdown so it matches the revised game.
+- If the requested edit conflicts with the current game or is too vague to
+  implement safely, choose the smallest sensible interpretation. Ask only when
+  the missing detail blocks progress.
+- Continue to satisfy all standalone, no-dependency, responsive, accessible,
+  start/restart, scoring, and verification requirements.
 
 ## Workflow
 
@@ -38,6 +62,9 @@ Use `reference/analysis-template.md` as the structure. The analysis must cover:
 - Required assets
 - Implementation plan
 - Mobile / desktop compatibility checklist
+
+For edits, also reflect the requested change and any preserved behavior in the
+analysis. The markdown should describe the revised game, not only the original.
 
 ### Step 2 - Design the game logic
 

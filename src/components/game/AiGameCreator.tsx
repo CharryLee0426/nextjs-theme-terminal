@@ -9,11 +9,13 @@ import {
   Heart,
   LoaderCircle,
   Send,
+  Trash2,
   Upload,
   X,
 } from "lucide-react";
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
-import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppToast } from "@/components/ToastProvider";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -26,6 +28,7 @@ type ChatMessage = {
 };
 
 type DraftGame = {
+  generated?: true;
   gameName: string;
   slug: string;
   fileName: string;
@@ -40,6 +43,14 @@ type DraftGame = {
   verificationConclusion: "PASS" | "FAIL";
   verificationReasons: string[];
   skillPath: string;
+  openAiModel: string;
+};
+
+type AssistantReply = {
+  generated: false;
+  intent: string;
+  message: string;
+  visibleProcess: string[];
   openAiModel: string;
 };
 
@@ -60,12 +71,17 @@ type AgentCompleteEvent = {
   draft: DraftGame;
 };
 
+type AgentReplyEvent = {
+  type: "reply";
+  reply: AssistantReply;
+};
+
 type AgentErrorEvent = {
   type: "error";
   error: string;
 };
 
-type AgentStreamEvent = AgentProgressEvent | AgentCompleteEvent | AgentErrorEvent;
+type AgentStreamEvent = AgentProgressEvent | AgentCompleteEvent | AgentReplyEvent | AgentErrorEvent;
 
 type PublishedGame = {
   _id: Id<"games">;
@@ -105,6 +121,16 @@ function formatAgentProgress(
         label: stringValue("mode") === "edit" ? "Preparing game edit" : "Preparing new game",
         detail: `Model: ${stringValue("model") ?? "default"}`,
       };
+    case "intent:start":
+      return { label: "Classifying request intent" };
+    case "intent:complete":
+      return {
+        label: `Intent: ${stringValue("intent") ?? "classified"}`,
+      };
+    case "answer:start":
+      return { label: "Answering harmless question" };
+    case "answer:complete":
+      return { label: "Answer ready" };
     case "planner:start":
       return { label: "Planning game design" };
     case "planner:complete":
@@ -143,6 +169,11 @@ function formatAgentProgress(
       };
     case "response:success":
       return { label: "Packaging generated files" };
+    case "response:assistant_reply":
+      return {
+        label: "Replying without game generation",
+        detail: stringValue("intent"),
+      };
     default:
       if (event.endsWith(":visibleProcess") && typeof details.step === "string") {
         return { label: details.step };
@@ -151,13 +182,90 @@ function formatAgentProgress(
   }
 }
 
+function safeMarkdownHref(href: string) {
+  try {
+    const url = new URL(href);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+function renderInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  const tokenPattern = /(\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|\*\*([^*\n]+)\*\*)/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = tokenPattern.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push(text.slice(lastIndex, match.index));
+    }
+
+    const [, rawToken, linkText, rawHref, strongText] = match;
+    if (linkText && rawHref) {
+      const href = safeMarkdownHref(rawHref);
+      if (href) {
+        nodes.push(
+          <a
+            key={`${keyPrefix}-link-${match.index}`}
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {linkText}
+          </a>,
+        );
+      } else {
+        nodes.push(rawToken);
+      }
+    } else if (strongText) {
+      nodes.push(<strong key={`${keyPrefix}-strong-${match.index}`}>{strongText}</strong>);
+    } else {
+      nodes.push(rawToken);
+    }
+
+    lastIndex = match.index + rawToken.length;
+  }
+
+  if (lastIndex < text.length) {
+    nodes.push(text.slice(lastIndex));
+  }
+
+  return nodes.length > 0 ? nodes : [text];
+}
+
+function ChatMessageContent({ content }: { content: string }) {
+  const paragraphs = content.split(/\n{2,}/);
+
+  return (
+    <div className="game-message__content">
+      {paragraphs.map((paragraph, paragraphIndex) => {
+        const lines = paragraph.split("\n");
+        return (
+          <p key={`${paragraphIndex}-${paragraph.slice(0, 12)}`}>
+            {lines.map((line, lineIndex) => (
+              <span key={`${paragraphIndex}-${lineIndex}`}>
+                {lineIndex > 0 && <br />}
+                {renderInlineMarkdown(line, `${paragraphIndex}-${lineIndex}`)}
+              </span>
+            ))}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
 export function AiGameCreator() {
   const toast = useAppToast();
   const { isLoading: authLoading, isAuthenticated } = useConvexAuth();
   const games = useQuery(api.games.listPublished) as PublishedGame[] | undefined;
+  const viewer = useQuery(api.account.viewer);
   const likeGame = useMutation(api.games.like);
   const generateUploadUrl = useMutation(api.games.generateUploadUrl);
   const createGame = useMutation(api.games.createGame);
+  const deleteGame = useMutation(api.games.deleteGame);
   const [prompt, setPrompt] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState<DraftGame | null>(null);
@@ -170,9 +278,12 @@ export function AiGameCreator() {
   const [submitImageFile, setSubmitImageFile] = useState<File | null>(null);
   const [submitImagePreviewUrl, setSubmitImagePreviewUrl] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [deletingGameId, setDeletingGameId] = useState<Id<"games"> | null>(null);
+  const previewFrameRef = useRef<HTMLIFrameElement | null>(null);
 
   const isConversation = messages.length > 0;
   const canSubmit = Boolean(draft) && !isSubmitting && !authLoading;
+  const canDeleteGames = viewer != null && viewer.role === "admin";
   const sortedGames = useMemo(() => games ?? [], [games]);
 
   useEffect(() => {
@@ -185,6 +296,27 @@ export function AiGameCreator() {
     setSubmitImagePreviewUrl(objectUrl);
     return () => URL.revokeObjectURL(objectUrl);
   }, [submitImageFile]);
+
+  const focusPreviewFrame = useCallback(() => {
+    const frame = previewFrameRef.current;
+    if (!frame) return;
+
+    frame.focus();
+    if (process.env.NODE_ENV !== "test") {
+      try {
+        frame.contentWindow?.focus();
+      } catch {
+        // Cross-document focus can fail in some browser/sandbox combinations.
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!previewHtml) return;
+
+    const frameId = window.requestAnimationFrame(focusPreviewFrame);
+    return () => window.cancelAnimationFrame(frameId);
+  }, [focusPreviewFrame, previewHtml]);
 
   const uploadBlob = async (blob: Blob, contentType: string) => {
     const uploadUrl = await generateUploadUrl();
@@ -221,6 +353,7 @@ export function AiGameCreator() {
     const decoder = new TextDecoder();
     let buffer = "";
     let completedDraft: DraftGame | null = null;
+    let assistantReply: AssistantReply | null = null;
 
     while (true) {
       const { value, done } = await reader.read();
@@ -238,6 +371,8 @@ export function AiGameCreator() {
           addAgentProgress(streamEvent.event, streamEvent.details);
         } else if (streamEvent.type === "complete") {
           completedDraft = streamEvent.draft;
+        } else if (streamEvent.type === "reply") {
+          assistantReply = streamEvent.reply;
         } else if (streamEvent.type === "error") {
           throw new Error(streamEvent.error);
         }
@@ -248,6 +383,8 @@ export function AiGameCreator() {
       const streamEvent = JSON.parse(buffer) as AgentStreamEvent;
       if (streamEvent.type === "complete") {
         completedDraft = streamEvent.draft;
+      } else if (streamEvent.type === "reply") {
+        assistantReply = streamEvent.reply;
       } else if (streamEvent.type === "error") {
         throw new Error(streamEvent.error);
       } else if (streamEvent.type === "progress") {
@@ -255,8 +392,12 @@ export function AiGameCreator() {
       }
     }
 
+    if (assistantReply) {
+      return assistantReply;
+    }
+
     if (!completedDraft) {
-      throw new Error("Game generation finished without a draft.");
+      throw new Error("Game generation finished without a draft or reply.");
     }
 
     return completedDraft;
@@ -290,6 +431,15 @@ export function AiGameCreator() {
         body: JSON.stringify({
           prompt: nextPrompt,
           previousHtml: draft?.html,
+          previousGame: draft
+            ? {
+                gameName: draft.gameName,
+                slug: draft.slug,
+                fileName: draft.fileName,
+                analysisFileName: draft.analysisFileName,
+                analysisMarkdown: draft.analysisMarkdown,
+              }
+            : undefined,
           stream: true,
         }),
       });
@@ -299,7 +449,21 @@ export function AiGameCreator() {
         throw new Error(payload.error || "Game generation failed.");
       }
 
-      const nextDraft = await readGenerationStream(response);
+      const result = await readGenerationStream(response);
+
+      if (result.generated === false) {
+        setMessages((current) => [
+          ...current,
+          {
+            id: makeId(),
+            role: "assistant",
+            content: result.message,
+          },
+        ]);
+        return;
+      }
+
+      const nextDraft = result;
       nextDraft.prompt = nextPrompt;
 
       setDraft(nextDraft);
@@ -411,6 +575,22 @@ export function AiGameCreator() {
     }
   };
 
+  const deletePublishedGame = async (game: PublishedGame) => {
+    if (deletingGameId) return;
+    const confirmed = window.confirm(`Delete "${game.name}"? This cannot be undone.`);
+    if (!confirmed) return;
+
+    setDeletingGameId(game._id);
+    try {
+      await deleteGame({ gameId: game._id });
+      toast.show("Game deleted.", "info");
+    } catch (error) {
+      toast.show(error instanceof Error ? error.message : "Game deletion failed.", "error");
+    } finally {
+      setDeletingGameId(null);
+    }
+  };
+
   const downloadBlob = (content: string, fileName: string, contentType: string) => {
     const objectUrl = URL.createObjectURL(new Blob([content], { type: contentType }));
     const link = document.createElement("a");
@@ -470,7 +650,7 @@ export function AiGameCreator() {
                   key={message.id}
                   className={message.role === "user" ? "game-message game-message--user" : "game-message game-message--assistant"}
                 >
-                  <p>{message.content}</p>
+                  <ChatMessageContent content={message.content} />
                   {message.details && message.details.length > 0 && (
                     <ol className="game-message__details">
                       {message.details.map((detail) => (
@@ -606,6 +786,22 @@ export function AiGameCreator() {
                           MD
                         </Link>
                       )}
+                      {canDeleteGames && (
+                        <button
+                          type="button"
+                          className="published-game-card__delete"
+                          onClick={() => void deletePublishedGame(game)}
+                          disabled={deletingGameId === game._id}
+                          aria-label={`Delete ${game.name}`}
+                          title="Delete game"
+                        >
+                          {deletingGameId === game._id ? (
+                            <LoaderCircle size={16} />
+                          ) : (
+                            <Trash2 size={16} />
+                          )}
+                        </button>
+                      )}
                     </div>
                   </div>
                 </article>
@@ -635,7 +831,17 @@ export function AiGameCreator() {
               <X size={22} />
             </button>
             <div className="game-preview-modal__stage">
-              <iframe title="Generated game preview" srcDoc={previewHtml} sandbox="allow-scripts" />
+              <iframe
+                ref={previewFrameRef}
+                title="Generated game preview"
+                srcDoc={previewHtml}
+                sandbox="allow-scripts allow-pointer-lock"
+                allow="gamepad; fullscreen"
+                allowFullScreen
+                tabIndex={0}
+                onLoad={focusPreviewFrame}
+                onPointerDown={focusPreviewFrame}
+              />
             </div>
           </div>
         </div>

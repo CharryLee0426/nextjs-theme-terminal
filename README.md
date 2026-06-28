@@ -169,7 +169,7 @@ npx convex deploy
 
 ### AI Game Creator setup
 
-The `/game` page lets users describe a browser mini game, opens a ChatGPT-style conversation, and calls the server route at `src/app/api/games/generate/route.ts`. The route reads the vendored `html-minigame` skill from `src/lib/gameCreator/html-minigame/SKILL.md` and runs an OpenAI Agents SDK workflow:
+The `/game` page lets users describe a browser mini game, opens a ChatGPT-style conversation, and calls the server route at `src/app/api/games/generate/route.ts`. By default, the route reads the vendored `html-minigame` skill from `src/lib/gameCreator/html-minigame/SKILL.md` and runs an OpenAI Agents SDK workflow:
 
 - planner agent: creates `<slug>_analysis.md`
 - builder agent: creates standalone `<slug>.html`
@@ -179,6 +179,11 @@ The client requests a streaming NDJSON response (`stream: true`) and displays vi
 
 After the HTML is generated, the same route asks fal.ai for a game intro image. If fal credentials are missing, it falls back to a generated SVG placeholder so local development can still exercise the flow. Users can preview the game in an iframe modal, ask for edits in chat, download either generated file, and submit the final Markdown, HTML, and intro image to Convex storage.
 
+For edit prompts, the client sends the current draft HTML plus game metadata
+(`gameName`, `slug`, filenames, and analysis markdown). The agent uses that
+context to preserve the existing game identity and apply the requested change
+instead of starting over.
+
 Add these variables to `.env.local` for local development and to your production host for deployment:
 
 ```bash
@@ -186,6 +191,17 @@ OPENAI_API_KEY=your-openai-api-key
 OPENAI_GAME_MODEL=gpt-4.1-mini # optional; defaults to gpt-4.1-mini
 FAL_KEY=your-fal-key           # or FAL_API_KEY
 ```
+
+To use the uploaded OpenAI `html-minigame` skill through the Responses API shell container path, set:
+
+```bash
+OPENAI_HTML_MINIGAME_SKILL_ID=skill_6a40208961188198ad19d4df039c20a40e193ab2fc8911f2
+OPENAI_HTML_MINIGAME_SKILL_VERSION=1
+OPENAI_GAME_MODEL=gpt-5.5
+OPENAI_GAME_GENERATION_MODE=skill
+```
+
+Pin `OPENAI_HTML_MINIGAME_SKILL_VERSION` in production so deployments do not silently change behavior when newer skill versions are published. Leave `OPENAI_GAME_GENERATION_MODE` unset to use the legacy Agents SDK builder fallback.
 
 Published game records are stored in the Convex `games` table. Each record points to three Convex storage objects and stores metadata:
 
