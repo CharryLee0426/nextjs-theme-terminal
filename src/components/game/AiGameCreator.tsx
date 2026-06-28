@@ -14,7 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppToast } from "@/components/ToastProvider";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -203,6 +203,7 @@ export function AiGameCreator() {
   const [submitImagePreviewUrl, setSubmitImagePreviewUrl] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingGameId, setDeletingGameId] = useState<Id<"games"> | null>(null);
+  const previewFrameRef = useRef<HTMLIFrameElement | null>(null);
 
   const isConversation = messages.length > 0;
   const canSubmit = Boolean(draft) && !isSubmitting && !authLoading;
@@ -219,6 +220,27 @@ export function AiGameCreator() {
     setSubmitImagePreviewUrl(objectUrl);
     return () => URL.revokeObjectURL(objectUrl);
   }, [submitImageFile]);
+
+  const focusPreviewFrame = useCallback(() => {
+    const frame = previewFrameRef.current;
+    if (!frame) return;
+
+    frame.focus();
+    if (process.env.NODE_ENV !== "test") {
+      try {
+        frame.contentWindow?.focus();
+      } catch {
+        // Cross-document focus can fail in some browser/sandbox combinations.
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!previewHtml) return;
+
+    const frameId = window.requestAnimationFrame(focusPreviewFrame);
+    return () => window.cancelAnimationFrame(frameId);
+  }, [focusPreviewFrame, previewHtml]);
 
   const uploadBlob = async (blob: Blob, contentType: string) => {
     const uploadUrl = await generateUploadUrl();
@@ -733,7 +755,17 @@ export function AiGameCreator() {
               <X size={22} />
             </button>
             <div className="game-preview-modal__stage">
-              <iframe title="Generated game preview" srcDoc={previewHtml} sandbox="allow-scripts" />
+              <iframe
+                ref={previewFrameRef}
+                title="Generated game preview"
+                srcDoc={previewHtml}
+                sandbox="allow-scripts allow-pointer-lock"
+                allow="gamepad; fullscreen"
+                allowFullScreen
+                tabIndex={0}
+                onLoad={focusPreviewFrame}
+                onPointerDown={focusPreviewFrame}
+              />
             </div>
           </div>
         </div>
