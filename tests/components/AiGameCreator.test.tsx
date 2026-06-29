@@ -10,6 +10,16 @@ const mockLikeGame = jest.fn();
 const mockGenerateUploadUrl = jest.fn();
 const mockCreateGame = jest.fn();
 const mockDeleteGame = jest.fn();
+const mockSaveChatSession = jest.fn();
+const mockArchiveChatSession = jest.fn();
+const mockRestoreChatSession = jest.fn();
+const mockDeleteChatSession = jest.fn();
+let queryState: {
+  games: unknown;
+  viewer: unknown;
+  activeSessions: unknown;
+  archivedSessions: unknown;
+};
 
 jest.mock("convex/react", () => ({
   useConvexAuth: () => mockUseConvexAuth(),
@@ -113,12 +123,35 @@ describe("AiGameCreator", () => {
     jest.clearAllMocks();
     global.fetch = jest.fn();
     mockUseConvexAuth.mockReturnValue({ isLoading: false, isAuthenticated: true });
-    mockUseQuery.mockReturnValue([]);
-    mockUseMutation
-      .mockReturnValueOnce(mockLikeGame)
-      .mockReturnValueOnce(mockGenerateUploadUrl)
-      .mockReturnValueOnce(mockCreateGame)
-      .mockReturnValueOnce(mockDeleteGame);
+    mockSaveChatSession.mockResolvedValue("session-1");
+    queryState = {
+      games: [],
+      viewer: null,
+      activeSessions: [],
+      archivedSessions: [],
+    };
+    let queryCallIndex = 0;
+    mockUseQuery.mockImplementation(() => {
+      const position = queryCallIndex % 4;
+      queryCallIndex += 1;
+      if (position === 0) return queryState.games;
+      if (position === 1) return queryState.viewer;
+      if (position === 2) return queryState.activeSessions;
+      return queryState.archivedSessions;
+    });
+    let mutationCallIndex = 0;
+    mockUseMutation.mockImplementation(() => {
+      const position = mutationCallIndex % 8;
+      mutationCallIndex += 1;
+      if (position === 0) return mockLikeGame;
+      if (position === 1) return mockGenerateUploadUrl;
+      if (position === 2) return mockCreateGame;
+      if (position === 3) return mockDeleteGame;
+      if (position === 4) return mockSaveChatSession;
+      if (position === 5) return mockArchiveChatSession;
+      if (position === 6) return mockRestoreChatSession;
+      return mockDeleteChatSession;
+    });
   });
 
   afterAll(() => {
@@ -209,6 +242,14 @@ describe("AiGameCreator", () => {
       prompt: "make a runner",
       stream: true,
     });
+    expect(mockSaveChatSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "make a runner",
+        messages: expect.arrayContaining([
+          expect.objectContaining({ role: "user", content: "make a runner" }),
+        ]),
+      }),
+    );
   });
 
   it("sends existing draft metadata when asking for game edits", async () => {
@@ -412,8 +453,7 @@ describe("AiGameCreator", () => {
 
   it("lets admins delete published games after confirmation", async () => {
     jest.spyOn(window, "confirm").mockReturnValueOnce(true);
-    mockUseQuery
-      .mockReturnValueOnce([
+    queryState.games = [
         {
           _id: "game-1",
           name: "Delete Me",
@@ -424,8 +464,8 @@ describe("AiGameCreator", () => {
           analysisUrl: null,
           imageUrl: null,
         },
-      ])
-      .mockReturnValueOnce({ role: "admin" });
+    ];
+    queryState.viewer = { role: "admin" };
 
     renderGameCreator();
 
@@ -435,5 +475,69 @@ describe("AiGameCreator", () => {
       expect(mockDeleteGame).toHaveBeenCalledWith({ gameId: "game-1" });
     });
     expect(window.confirm).toHaveBeenCalledWith('Delete "Delete Me"? This cannot be undone.');
+  });
+
+  it("guides signed-out visitors to log in before using the game creator", () => {
+    mockUseConvexAuth.mockReturnValueOnce({ isLoading: false, isAuthenticated: false });
+
+    renderGameCreator();
+
+    expect(screen.getByRole("heading", { name: "Sign in to use AI Game Creator" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Log in to start generating games" })).toHaveAttribute(
+      "href",
+      "/sign",
+    );
+    expect(screen.queryByLabelText("Game prompt")).not.toBeInTheDocument();
+  });
+
+  it("loads, archives, restores, and deletes saved chat sessions", async () => {
+    jest.spyOn(window, "confirm").mockReturnValueOnce(true);
+    const session = {
+      _id: "session-1",
+      title: "Space Runner",
+      createdAt: Date.UTC(2026, 0, 1),
+      updatedAt: Date.UTC(2026, 0, 2),
+      messages: [
+        { id: "m1", role: "user", content: "make a runner" },
+        { id: "m2", role: "assistant", content: "Generated Space Runner." },
+      ],
+      draft: makeDraft({ gameName: "Space Runner" }),
+    };
+    const archivedSession = {
+      ...session,
+      _id: "session-2",
+      title: "Archived Puzzle",
+      archivedAt: Date.UTC(2026, 0, 3),
+      draft: undefined,
+    };
+
+    queryState.activeSessions = [session];
+    queryState.archivedSessions = [archivedSession];
+
+    renderGameCreator();
+
+    fireEvent.click(screen.getByText("Space Runner"));
+    expect(screen.getByText("Generated Space Runner.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Space Runner" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("Archive Space Runner"));
+    await waitFor(() => {
+      expect(mockArchiveChatSession).toHaveBeenCalledWith({ sessionId: "session-1" });
+    });
+
+    fireEvent.click(screen.getByText("Show archived"));
+    fireEvent.click(screen.getByLabelText("Restore Archived Puzzle"));
+    await waitFor(() => {
+      expect(mockRestoreChatSession).toHaveBeenCalledWith({ sessionId: "session-2" });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Show archived")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByLabelText("Delete Space Runner"));
+    await waitFor(() => {
+      expect(mockDeleteChatSession).toHaveBeenCalledWith({ sessionId: "session-1" });
+    });
+    expect(window.confirm).toHaveBeenCalledWith('Delete "Space Runner"? This cannot be undone.');
   });
 });

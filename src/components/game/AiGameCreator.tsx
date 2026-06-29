@@ -4,10 +4,13 @@ import Link from "next/link";
 import { format } from "date-fns";
 import {
   ArrowLeft,
+  Archive,
+  Clock3,
   ExternalLink,
   Gamepad2,
   Heart,
   LoaderCircle,
+  RotateCcw,
   Send,
   Trash2,
   Upload,
@@ -94,6 +97,16 @@ type PublishedGame = {
   htmlFileName?: string;
   analysisFileName?: string;
   imageUrl: string | null;
+};
+
+type GameChatSession = {
+  _id: Id<"gameChatSessions">;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  archivedAt?: number;
+  messages: ChatMessage[];
+  draft?: DraftGame;
 };
 
 function makeId() {
@@ -262,13 +275,29 @@ export function AiGameCreator() {
   const { isLoading: authLoading, isAuthenticated } = useConvexAuth();
   const games = useQuery(api.games.listPublished) as PublishedGame[] | undefined;
   const viewer = useQuery(api.account.viewer);
+  const activeSessions = useQuery(
+    api.games.listChatSessions,
+    isAuthenticated ? { archived: false } : "skip",
+  ) as GameChatSession[] | undefined;
+  const archivedSessions = useQuery(
+    api.games.listChatSessions,
+    isAuthenticated ? { archived: true } : "skip",
+  ) as GameChatSession[] | undefined;
   const likeGame = useMutation(api.games.like);
   const generateUploadUrl = useMutation(api.games.generateUploadUrl);
   const createGame = useMutation(api.games.createGame);
   const deleteGame = useMutation(api.games.deleteGame);
+  const saveChatSession = useMutation(api.games.saveChatSession);
+  const archiveChatSession = useMutation(api.games.archiveChatSession);
+  const restoreChatSession = useMutation(api.games.restoreChatSession);
+  const deleteChatSession = useMutation(api.games.deleteChatSession);
   const [prompt, setPrompt] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState<DraftGame | null>(null);
+  const [activeSessionId, setActiveSessionId] = useState<Id<"gameChatSessions"> | null>(null);
+  const [sessionTitle, setSessionTitle] = useState("");
+  const [showArchivedSessions, setShowArchivedSessions] = useState(false);
+  const [sessionActionId, setSessionActionId] = useState<Id<"gameChatSessions"> | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStatus, setGenerationStatus] = useState("");
   const [agentProgress, setAgentProgress] = useState<AgentProgressItem[]>([]);
@@ -285,6 +314,28 @@ export function AiGameCreator() {
   const canSubmit = Boolean(draft) && !isSubmitting && !authLoading;
   const canDeleteGames = viewer != null && viewer.role === "admin";
   const sortedGames = useMemo(() => games ?? [], [games]);
+  const visibleSessions = showArchivedSessions ? archivedSessions : activeSessions;
+
+  const persistSession = async ({
+    sessionId,
+    title,
+    nextMessages,
+    nextDraft,
+  }: {
+    sessionId?: Id<"gameChatSessions"> | null;
+    title: string;
+    nextMessages: ChatMessage[];
+    nextDraft?: DraftGame | null;
+  }) => {
+    const savedSessionId = await saveChatSession({
+      sessionId: sessionId ?? undefined,
+      title,
+      messages: nextMessages,
+      draft: nextDraft ?? undefined,
+    });
+    setActiveSessionId(savedSessionId as Id<"gameChatSessions">);
+    return savedSessionId as Id<"gameChatSessions">;
+  };
 
   useEffect(() => {
     if (!submitImageFile) {
@@ -407,13 +458,21 @@ export function AiGameCreator() {
     event?.preventDefault();
     const nextPrompt = prompt.trim();
     if (!nextPrompt || isGenerating) return;
+    if (!isAuthenticated) {
+      toast.show("Sign in to create and keep game chat sessions.", "error");
+      return;
+    }
 
     const userMessage: ChatMessage = {
       id: makeId(),
       role: "user",
       content: nextPrompt,
     };
-    setMessages((current) => [...current, userMessage]);
+    const startingMessages = [...messages, userMessage];
+    const nextTitle = sessionTitle || nextPrompt;
+    let sessionId = activeSessionId;
+
+    setMessages(startingMessages);
     setPrompt("");
     setIsGenerating(true);
     setGenerationStatus(draft ? "Editing game" : "Generating game");
@@ -425,6 +484,14 @@ export function AiGameCreator() {
     ]);
 
     try {
+      sessionId = await persistSession({
+        sessionId,
+        title: nextTitle,
+        nextMessages: startingMessages,
+        nextDraft: draft,
+      });
+      if (!sessionTitle) setSessionTitle(nextTitle);
+
       const response = await fetch("/api/games/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -452,14 +519,21 @@ export function AiGameCreator() {
       const result = await readGenerationStream(response);
 
       if (result.generated === false) {
-        setMessages((current) => [
-          ...current,
+        const finalMessages = [
+          ...startingMessages,
           {
             id: makeId(),
-            role: "assistant",
+            role: "assistant" as const,
             content: result.message,
           },
-        ]);
+        ];
+        setMessages(finalMessages);
+        await persistSession({
+          sessionId,
+          title: nextTitle,
+          nextMessages: finalMessages,
+          nextDraft: draft,
+        });
         return;
       }
 
@@ -476,23 +550,39 @@ export function AiGameCreator() {
         `Verification: ${nextDraft.verificationConclusion}`,
         ...(Array.isArray(nextDraft.verificationReasons) ? nextDraft.verificationReasons : []),
       ];
-      setMessages((current) => [
-        ...current,
+      const finalMessages = [
+        ...startingMessages,
         {
           id: makeId(),
-          role: "assistant",
+          role: "assistant" as const,
           content: nextDraft.imageNote
             ? `Generated ${nextDraft.gameName}. ${nextDraft.imageNote}`
             : `Generated ${nextDraft.gameName}. Preview it, submit it, or keep editing by chat.`,
           details: trace,
         },
-      ]);
+      ];
+      setMessages(finalMessages);
+      await persistSession({
+        sessionId,
+        title: nextTitle,
+        nextMessages: finalMessages,
+        nextDraft,
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Game generation failed.";
-      setMessages((current) => [
-        ...current,
-        { id: makeId(), role: "assistant", content: message },
-      ]);
+      const finalMessages = [
+        ...startingMessages,
+        { id: makeId(), role: "assistant" as const, content: message },
+      ];
+      setMessages(finalMessages);
+      if (sessionId) {
+        await persistSession({
+          sessionId,
+          title: nextTitle,
+          nextMessages: finalMessages,
+          nextDraft: draft,
+        }).catch(() => undefined);
+      }
       toast.show(message, "error");
     } finally {
       setIsGenerating(false);
@@ -546,10 +636,19 @@ export function AiGameCreator() {
       });
 
       setSubmitOpen(false);
-      setMessages((current) => [
-        ...current,
-        { id: makeId(), role: "assistant", content: `${name} was submitted and published.` },
-      ]);
+      const finalMessages = [
+        ...messages,
+        { id: makeId(), role: "assistant" as const, content: `${name} was submitted and published.` },
+      ];
+      setMessages(finalMessages);
+      if (activeSessionId) {
+        await persistSession({
+          sessionId: activeSessionId,
+          title: sessionTitle || name,
+          nextMessages: finalMessages,
+          nextDraft: draft,
+        });
+      }
       toast.show("Game submitted.", "info");
     } catch (error) {
       toast.show(error instanceof Error ? error.message : "Game submission failed.", "error");
@@ -617,6 +716,8 @@ export function AiGameCreator() {
     setPrompt("");
     setMessages([]);
     setDraft(null);
+    setActiveSessionId(null);
+    setSessionTitle("");
     setGenerationStatus("");
     setAgentProgress([]);
     setPreviewHtml(null);
@@ -625,8 +726,201 @@ export function AiGameCreator() {
     setSubmitImageFile(null);
   };
 
+  const loadSession = (session: GameChatSession) => {
+    setActiveSessionId(session._id);
+    setSessionTitle(session.title);
+    setMessages(session.messages);
+    setDraft(session.draft ?? null);
+    setSubmitName(session.draft?.gameName ?? "");
+    setSubmitImageFile(null);
+    setPrompt("");
+    setGenerationStatus("");
+    setAgentProgress([]);
+    setPreviewHtml(null);
+    setSubmitOpen(false);
+  };
+
+  const archiveSession = async (session: GameChatSession) => {
+    if (sessionActionId) return;
+    setSessionActionId(session._id);
+    try {
+      await archiveChatSession({ sessionId: session._id });
+      if (activeSessionId === session._id) returnToGameHome();
+      toast.show("Chat session archived.", "info");
+    } catch (error) {
+      toast.show(error instanceof Error ? error.message : "Could not archive chat session.", "error");
+    } finally {
+      setSessionActionId(null);
+    }
+  };
+
+  const restoreSession = async (session: GameChatSession) => {
+    if (sessionActionId) return;
+    setSessionActionId(session._id);
+    try {
+      await restoreChatSession({ sessionId: session._id });
+      setShowArchivedSessions(false);
+      toast.show("Chat session restored.", "info");
+    } catch (error) {
+      toast.show(error instanceof Error ? error.message : "Could not restore chat session.", "error");
+    } finally {
+      setSessionActionId(null);
+    }
+  };
+
+  const deleteSession = async (session: GameChatSession) => {
+    if (sessionActionId) return;
+    const confirmed = window.confirm(`Delete "${session.title}"? This cannot be undone.`);
+    if (!confirmed) return;
+
+    setSessionActionId(session._id);
+    try {
+      await deleteChatSession({ sessionId: session._id });
+      if (activeSessionId === session._id) returnToGameHome();
+      toast.show("Chat session deleted.", "info");
+    } catch (error) {
+      toast.show(error instanceof Error ? error.message : "Could not delete chat session.", "error");
+    } finally {
+      setSessionActionId(null);
+    }
+  };
+
+  if (authLoading) {
+    return (
+      <section className="game-page" aria-label="AI Game Creator">
+        <div className="game-chat game-chat--auth">
+          <LoaderCircle size={24} />
+          <span>Checking account access</span>
+        </div>
+      </section>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <section className="game-page" aria-label="AI Game Creator">
+        <div className="game-chat game-chat--auth">
+          <Gamepad2 size={34} aria-hidden="true" />
+          <h1>Sign in to use AI Game Creator</h1>
+          <p>
+            Game chats are saved to your account so you can review, continue,
+            archive, or delete them later.
+          </p>
+          <Link href="/sign" className="game-chat__auth-link">
+            Log in to start generating games
+          </Link>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="game-page" aria-label="AI Game Creator">
+      <section className="game-sessions" aria-label="Game chat sessions">
+        <div className="game-sessions__header">
+          <div>
+            <h2>Chat Sessions</h2>
+            <span>{showArchivedSessions ? "Archived" : "Active"} history</span>
+          </div>
+          <div className="game-sessions__controls">
+            <button type="button" onClick={returnToGameHome}>
+              New chat
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowArchivedSessions((current) => !current)}
+            >
+              {showArchivedSessions ? "Show active" : "Show archived"}
+            </button>
+          </div>
+        </div>
+
+        {visibleSessions === undefined ? (
+          <div className="game-sessions__empty">
+            <LoaderCircle size={18} />
+            <span>Loading sessions</span>
+          </div>
+        ) : visibleSessions.length === 0 ? (
+          <div className="game-sessions__empty">
+            {showArchivedSessions ? "No archived sessions." : "No saved sessions yet."}
+          </div>
+        ) : (
+          <div className="game-sessions__list">
+            {visibleSessions.map((session) => (
+              <article
+                key={session._id}
+                className={
+                  activeSessionId === session._id
+                    ? "game-session-card game-session-card--active"
+                    : "game-session-card"
+                }
+              >
+                <button
+                  type="button"
+                  className="game-session-card__main"
+                  onClick={() => loadSession(session)}
+                >
+                  <strong>{session.title}</strong>
+                  <span>
+                    <Clock3 size={14} />
+                    {format(new Date(session.updatedAt), "MMM d, yyyy HH:mm")}
+                  </span>
+                  <small>
+                    {session.messages.length} messages
+                    {session.draft ? ` - ${session.draft.gameName}` : ""}
+                  </small>
+                </button>
+                <div className="game-session-card__actions">
+                  {showArchivedSessions ? (
+                    <button
+                      type="button"
+                      onClick={() => void restoreSession(session)}
+                      disabled={sessionActionId === session._id}
+                      aria-label={`Restore ${session.title}`}
+                      title="Restore session"
+                    >
+                      {sessionActionId === session._id ? (
+                        <LoaderCircle size={15} />
+                      ) : (
+                        <RotateCcw size={15} />
+                      )}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void archiveSession(session)}
+                      disabled={sessionActionId === session._id}
+                      aria-label={`Archive ${session.title}`}
+                      title="Archive session"
+                    >
+                      {sessionActionId === session._id ? (
+                        <LoaderCircle size={15} />
+                      ) : (
+                        <Archive size={15} />
+                      )}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="game-session-card__delete"
+                    onClick={() => void deleteSession(session)}
+                    disabled={sessionActionId === session._id}
+                    aria-label={`Delete ${session.title}`}
+                    title="Delete session"
+                  >
+                    {sessionActionId === session._id ? (
+                      <LoaderCircle size={15} />
+                    ) : (
+                      <Trash2 size={15} />
+                    )}
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
       <div className={isConversation ? "game-chat game-chat--active" : "game-chat"}>
         {!isConversation && (
           <div className="game-chat__intro">

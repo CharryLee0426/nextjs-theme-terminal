@@ -2598,6 +2598,27 @@ a:hover {
   gap: 22px;
 }
 
+.game-chat--auth {
+  align-items: center;
+  min-height: 420px;
+  text-align: center;
+}
+
+.game-chat--auth svg {
+  color: var(--accent);
+}
+
+.game-chat--auth h1,
+.game-chat--auth p {
+  margin: 0;
+}
+
+.game-chat--auth p {
+  max-width: 560px;
+  color: var(--color);
+  line-height: 1.6;
+}
+
 .game-chat--active {
   min-height: calc(100vh - 210px);
   justify-content: space-between;
@@ -2650,6 +2671,10 @@ a:hover {
 
 .game-prompt button,
 .game-chat__back,
+.game-chat__auth-link,
+.game-sessions__controls button,
+.game-session-card__main,
+.game-session-card__actions button,
 .game-result-card__actions button,
 .published-game-card__actions button,
 .published-game-card__actions a,
@@ -2676,6 +2701,10 @@ a:hover {
 
 .game-prompt button:hover,
 .game-chat__back:hover,
+.game-chat__auth-link:hover,
+.game-sessions__controls button:hover,
+.game-session-card__main:hover,
+.game-session-card__actions button:hover,
 .game-result-card__actions button:hover,
 .published-game-card__actions button:hover,
 .published-game-card__actions a:hover,
@@ -2688,10 +2717,148 @@ a:hover {
 }
 
 .game-prompt button:disabled,
+.game-session-card__actions button:disabled,
 .game-result-card__actions button:disabled,
 .game-submit-form button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
+}
+
+.game-chat__auth-link {
+  min-height: 44px;
+  padding: 0 16px;
+  text-decoration: none;
+}
+
+.game-sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.game-sessions__header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.game-sessions__header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.game-sessions__header span {
+  color: var(--color);
+  font-size: 0.86rem;
+}
+
+.game-sessions__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.game-sessions__controls button {
+  min-height: 38px;
+  padding: 0 12px;
+}
+
+.game-sessions__empty {
+  min-height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px dashed var(--border-color);
+  border-radius: 8px;
+  color: var(--color);
+}
+
+.game-sessions__empty svg {
+  animation: game-spin 0.9s linear infinite;
+}
+
+.game-sessions__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.game-session-card {
+  min-height: 118px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: rgba(42, 45, 42, 0.72);
+}
+
+.game-session-card--active {
+  border-color: rgba(0, 255, 65, 0.45);
+  background: rgba(0, 255, 65, 0.08);
+}
+
+.game-session-card__main {
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: flex-start;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px;
+  border-color: transparent;
+  background: transparent;
+  text-align: left;
+}
+
+.game-session-card__main strong {
+  width: 100%;
+  color: var(--foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.game-session-card__main span,
+.game-session-card__main small {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color);
+  font-size: 0.82rem;
+}
+
+.game-session-card__main small {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.game-session-card__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.game-session-card__actions button {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+}
+
+.game-session-card__actions .game-session-card__delete {
+  border-color: rgba(255, 92, 92, 0.55);
+  color: #ff8f8f;
+}
+
+.game-session-card__actions .game-session-card__delete:hover:not(:disabled) {
+  border-color: #ff8f8f;
+  color: var(--background);
+  background: #ff8f8f;
 }
 
 .game-chat__conversation {
