@@ -1,11 +1,12 @@
 import OpenAI from "openai";
 import type { Response, Tool } from "openai/resources/responses/responses";
-import { assertCompleteHtml } from "./agents";
+import { assertCompleteHtml, type GameConversationMessage } from "./agents";
 
 export type GenerateGameWithOpenAISkillInput = {
   prompt: string;
   intent?: unknown;
   plan?: unknown;
+  conversationContext?: GameConversationMessage[];
   previousHtml?: string;
   mode?: "create" | "edit";
   requestId?: string;
@@ -57,6 +58,7 @@ function buildSkillPrompt({
   prompt,
   intent,
   plan,
+  conversationContext,
   previousHtml,
   mode,
   requestId,
@@ -69,6 +71,15 @@ function buildSkillPrompt({
     requestId ? `Request id: ${requestId}.` : "",
     "",
     "Create or edit the game according to the user request.",
+    conversationContext?.length
+      ? [
+          "Recent conversation context, oldest to newest. Use it only to resolve references and preserve continuity; the current user request below is the active request.",
+          ...conversationContext.map((message) => {
+            const role = message.role === "assistant" ? "Assistant" : "User";
+            return `${role}: ${message.content}`;
+          }),
+        ].join("\n")
+      : "",
     "In the shell container, write both of these files:",
     "- `/mnt/data/game_analysis.md`",
     "- `/mnt/data/game.html`",

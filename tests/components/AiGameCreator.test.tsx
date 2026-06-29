@@ -313,6 +313,13 @@ describe("AiGameCreator", () => {
 
     expect(JSON.parse((global.fetch as jest.Mock).mock.calls[1][1].body)).toMatchObject({
       prompt: "make the background space themed",
+      conversationContext: [
+        expect.objectContaining({ role: "user", content: "make a runner" }),
+        expect.objectContaining({
+          role: "assistant",
+          content: "Generated Test Runner. Preview it, submit it, or keep editing by chat.",
+        }),
+      ],
       previousHtml: "<!DOCTYPE html><html><body><script></script></body></html>",
       previousGame: {
         gameName: "Test Runner",

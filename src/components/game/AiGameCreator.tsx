@@ -109,8 +109,44 @@ type GameChatSession = {
   draft?: DraftGame;
 };
 
+const MAX_CONVERSATION_CONTEXT_MESSAGES = 8;
+const MAX_CONVERSATION_CONTEXT_CHARS = 6000;
+const MAX_CONVERSATION_MESSAGE_CHARS = 900;
+
 function makeId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function truncateContextText(value: string, maxChars: number) {
+  if (maxChars <= 0) return "";
+  if (value.length <= maxChars) return value;
+  if (maxChars <= 15) return value.slice(0, maxChars);
+  return `${value.slice(0, maxChars - 15).trimEnd()}... [truncated]`;
+}
+
+function buildConversationContext(messages: ChatMessage[]) {
+  const recent = messages
+    .filter((message) => message.content.trim())
+    .slice(-MAX_CONVERSATION_CONTEXT_MESSAGES)
+    .map((message) => ({
+      role: message.role,
+      content: truncateContextText(
+        message.content.trim(),
+        MAX_CONVERSATION_MESSAGE_CHARS,
+      ),
+    }));
+
+  let remainingChars = MAX_CONVERSATION_CONTEXT_CHARS;
+  const bounded: Array<{ role: ChatMessage["role"]; content: string }> = [];
+  for (let index = recent.length - 1; index >= 0; index -= 1) {
+    const message = recent[index];
+    if (remainingChars <= 0) break;
+    const content = truncateContextText(message.content, remainingChars);
+    bounded.unshift({ ...message, content });
+    remainingChars -= content.length;
+  }
+
+  return bounded;
 }
 
 function formatAgentProgress(
@@ -497,6 +533,7 @@ export function AiGameCreator() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt: nextPrompt,
+          conversationContext: buildConversationContext(messages),
           previousHtml: draft?.html,
           previousGame: draft
             ? {

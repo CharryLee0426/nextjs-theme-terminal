@@ -21,6 +21,11 @@ export type PreviousGameContext = {
   analysisMarkdown?: string;
 };
 
+export type GameConversationMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
 export type GameRequestIntent =
   | "GREETING"
   | "UNRELATED_HARMLESS"
@@ -144,16 +149,30 @@ function logVisibleProcess(
   });
 }
 
+function formatConversationContext(conversationContext?: GameConversationMessage[]) {
+  if (!conversationContext?.length) return "";
+
+  return [
+    "Recent conversation context, oldest to newest. Use it only to resolve references and preserve continuity; the current user message is the active request.",
+    ...conversationContext.map((message) => {
+      const role = message.role === "assistant" ? "Assistant" : "User";
+      return `${role}: ${message.content}`;
+    }),
+  ].join("\n");
+}
+
 export async function classifyGameRequest({
   apiKey,
   model,
   prompt,
+  conversationContext,
   previousHtml,
   logger,
 }: {
   apiKey: string;
   model: string;
   prompt: string;
+  conversationContext?: GameConversationMessage[];
   previousHtml?: string;
   logger?: AgentWorkflowLogger;
 }): Promise<GameRequestClassification> {
@@ -211,10 +230,11 @@ export async function classifyGameRequest({
   const result = await run(
     classifier,
     [
+      formatConversationContext(conversationContext),
       previousHtml
         ? "There is an existing generated HTML game. Classify whether the message is a feasible edit request for that game. Only feasible single-file HTML/CSS/JavaScript edits should enter the edit pipeline."
         : "There is no current generated game. Classify whether the message is a feasible game creation request.",
-      `User message: ${prompt}`,
+      `Current user message: ${prompt}`,
       previousHtml
         ? [
             `Existing HTML length: ${previousHtml.length}`,
@@ -249,11 +269,13 @@ export async function answerUnrelatedHarmlessQuestion({
   apiKey,
   model,
   prompt,
+  conversationContext,
   logger,
 }: {
   apiKey: string;
   model: string;
   prompt: string;
+  conversationContext?: GameConversationMessage[];
   logger?: AgentWorkflowLogger;
 }): Promise<HarmlessQuestionAnswer> {
   setDefaultOpenAIKey(apiKey);
@@ -290,7 +312,8 @@ export async function answerUnrelatedHarmlessQuestion({
   const result = await run(
     answerer,
     [
-      `User question: ${prompt}`,
+      formatConversationContext(conversationContext),
+      `Current user question: ${prompt}`,
       "Answer as the HTML/WebJS minigame assistant. Keep it concise and redirect back to minigame creation.",
     ].join("\n\n"),
     { maxTurns: 4 },
@@ -318,6 +341,7 @@ export async function generateGameWithAgents({
   prompt,
   skill,
   analysisTemplate,
+  conversationContext,
   previousHtml,
   previousGame,
   logger,
@@ -327,6 +351,7 @@ export async function generateGameWithAgents({
   prompt: string;
   skill: string;
   analysisTemplate: string;
+  conversationContext?: GameConversationMessage[];
   previousHtml?: string;
   previousGame?: PreviousGameContext;
   logger?: AgentWorkflowLogger;
@@ -373,8 +398,9 @@ export async function generateGameWithAgents({
   const planResult = await run(
     planner,
     [
+      formatConversationContext(conversationContext),
       previousHtml ? "Revise the existing game based on the new request." : "Create a new game.",
-      `User prompt: ${prompt}`,
+      `Current user prompt: ${prompt}`,
       previousGame?.gameName ? `Existing game name: ${previousGame.gameName}` : "",
       previousGame?.slug ? `Existing slug to preserve unless explicitly renamed: ${previousGame.slug}` : "",
       previousGame?.fileName ? `Existing HTML filename: ${previousGame.fileName}` : "",

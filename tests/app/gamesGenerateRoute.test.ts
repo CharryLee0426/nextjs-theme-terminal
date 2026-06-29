@@ -194,6 +194,57 @@ describe("games generate API route", () => {
     );
   });
 
+  it("passes a bounded recent conversation context to the agents", async () => {
+    const longText = "x".repeat(1200);
+    const conversationContext = [
+      { role: "user", content: "oldest message should be dropped" },
+      { role: "assistant", content: "old assistant message should be dropped" },
+      { role: "user", content: "make a paddle game" },
+      { role: "assistant", content: "Generated Paddle Pop." },
+      { role: "user", content: "add enemies" },
+      { role: "assistant", content: "Generated Paddle Pop with enemies." },
+      { role: "user", content: "make it faster" },
+      { role: "assistant", content: "Generated a faster version." },
+      { role: "user", content: longText },
+      { role: "assistant", content: "Generated a very fast version." },
+    ];
+
+    const response = await POST(
+      makeRequest({
+        prompt: "make that last version neon",
+        conversationContext,
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockedClassifyGameRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: "make that last version neon",
+        conversationContext: expect.arrayContaining([
+          expect.objectContaining({ role: "user", content: "make a paddle game" }),
+          expect.objectContaining({
+            role: "assistant",
+            content: "Generated a very fast version.",
+          }),
+        ]),
+      }),
+    );
+    const classifyArgs = mockedClassifyGameRequest.mock.calls[0][0];
+    expect(classifyArgs.conversationContext).toHaveLength(8);
+    expect(classifyArgs.conversationContext?.[0].content).toBe("make a paddle game");
+    expect(classifyArgs.conversationContext?.some((message) =>
+      message.content.includes("oldest message should be dropped"),
+    )).toBe(false);
+    expect(classifyArgs.conversationContext?.some((message) =>
+      message.content.includes("[truncated]"),
+    )).toBe(true);
+    expect(mockedGenerateGameWithAgents).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationContext: classifyArgs.conversationContext,
+      }),
+    );
+  });
+
   it("returns downgrade guidance for infeasible edit prompts without running the edit pipeline", async () => {
     const previousGame = {
       gameName: "Original Runner",

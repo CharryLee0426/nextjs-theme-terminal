@@ -6,6 +6,7 @@ import {
   answerUnrelatedHarmlessQuestion,
   classifyGameRequest,
   generateGameWithAgents,
+  type GameConversationMessage,
   normalizeSlug,
   slugify,
   type GeneratedGameArtifacts,
@@ -19,6 +20,10 @@ import {
 
 type GameGenerateRequest = {
   prompt?: string;
+  conversationContext?: Array<{
+    role?: unknown;
+    content?: unknown;
+  }>;
   previousHtml?: string;
   previousGame?: PreviousGameContext;
   stream?: boolean;
@@ -45,6 +50,9 @@ const ANALYSIS_TEMPLATE_PATH = path.join(
 const SKILL_DISPLAY_PATH = "src/lib/gameCreator/html-minigame/SKILL.md";
 const OPENAI_MODEL = process.env.OPENAI_GAME_MODEL || process.env.OPENAI_MODEL || "gpt-4.1-mini";
 const INTRO_IMAGE_MODEL = "fal-ai/flux/schnell";
+const MAX_CONVERSATION_CONTEXT_MESSAGES = 8;
+const MAX_CONVERSATION_CONTEXT_CHARS = 6000;
+const MAX_CONVERSATION_MESSAGE_CHARS = 900;
 
 export const runtime = "nodejs";
 
@@ -150,6 +158,44 @@ function stripHtmlFence(rawText: string) {
     .trim();
 }
 
+function truncateText(value: string, maxChars: number) {
+  if (maxChars <= 0) return "";
+  if (value.length <= maxChars) return value;
+  if (maxChars <= 15) return value.slice(0, maxChars);
+  return `${value.slice(0, maxChars - 15).trimEnd()}... [truncated]`;
+}
+
+function sanitizeConversationContext(
+  context: GameGenerateRequest["conversationContext"],
+): GameConversationMessage[] {
+  if (!Array.isArray(context)) return [];
+
+  const recent = context
+    .filter(
+      (message): message is { role: "user" | "assistant"; content: string } =>
+        (message.role === "user" || message.role === "assistant") &&
+        typeof message.content === "string" &&
+        message.content.trim().length > 0,
+    )
+    .slice(-MAX_CONVERSATION_CONTEXT_MESSAGES)
+    .map((message) => ({
+      role: message.role,
+      content: truncateText(message.content.trim(), MAX_CONVERSATION_MESSAGE_CHARS),
+    }));
+
+  let remainingChars = MAX_CONVERSATION_CONTEXT_CHARS;
+  const bounded: GameConversationMessage[] = [];
+  for (let index = recent.length - 1; index >= 0; index -= 1) {
+    const message = recent[index];
+    if (remainingChars <= 0) break;
+    const content = truncateText(message.content, remainingChars);
+    bounded.unshift({ ...message, content });
+    remainingChars -= content.length;
+  }
+
+  return bounded;
+}
+
 function buildSkillAnalysisMarkdown({
   result,
   prompt,
@@ -248,11 +294,13 @@ async function generateIntroImage(prompt: string, gameName: string) {
 
 async function createGameDraft({
   prompt,
+  conversationContext,
   previousHtml,
   previousGame,
   logAgent,
 }: {
   prompt: string;
+  conversationContext: GameConversationMessage[];
   previousHtml?: string;
   previousGame?: PreviousGameContext;
   logAgent: GenerationLogger;
@@ -267,6 +315,7 @@ async function createGameDraft({
     apiKey,
     model: OPENAI_MODEL,
     prompt,
+    conversationContext,
     previousHtml,
     logger: logAgent,
   });
@@ -278,6 +327,7 @@ async function createGameDraft({
             apiKey,
             model: OPENAI_MODEL,
             prompt,
+            conversationContext,
             logger: logAgent,
           })
         : null;
@@ -313,6 +363,7 @@ async function createGameDraft({
     const skillResult = await generateGameWithOpenAISkill({
       prompt,
       intent: classification,
+      conversationContext,
       previousHtml,
       mode: previousHtml ? "edit" : "create",
     });
@@ -354,6 +405,7 @@ async function createGameDraft({
       prompt,
       skill,
       analysisTemplate,
+      conversationContext,
       previousHtml,
       previousGame,
       logger: logAgent,
@@ -395,8 +447,14 @@ export async function POST(request: Request) {
     if (!prompt) {
       return jsonError("Prompt is required.", 400);
     }
+    const conversationContext = sanitizeConversationContext(body.conversationContext);
     logAgent("request:received", {
       promptLength: prompt.length,
+      conversationContextMessages: conversationContext.length,
+      conversationContextChars: conversationContext.reduce(
+        (total, message) => total + message.content.length,
+        0,
+      ),
       hasPreviousHtml: Boolean(body.previousHtml),
     });
 
@@ -408,10 +466,12 @@ export async function POST(request: Request) {
             try {
               streamLogger("stream:start", {
                 promptLength: prompt.length,
+                conversationContextMessages: conversationContext.length,
                 hasPreviousHtml: Boolean(body.previousHtml),
               });
               const payload = await createGameDraft({
                 prompt,
+                conversationContext,
                 previousHtml: body.previousHtml,
                 previousGame: body.previousGame,
                 logAgent: streamLogger,
@@ -451,6 +511,7 @@ export async function POST(request: Request) {
 
     const payload = await createGameDraft({
       prompt,
+      conversationContext,
       previousHtml: body.previousHtml,
       previousGame: body.previousGame,
       logAgent,
