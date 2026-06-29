@@ -2672,6 +2672,8 @@ a:hover {
 .game-prompt button,
 .game-chat__back,
 .game-chat__auth-link,
+.game-library__create-link,
+.game-library__inline-link,
 .game-sessions__controls button,
 .game-session-card__main,
 .game-session-card__actions button,
@@ -2702,6 +2704,8 @@ a:hover {
 .game-prompt button:hover,
 .game-chat__back:hover,
 .game-chat__auth-link:hover,
+.game-library__create-link:hover,
+.game-library__inline-link:hover,
 .game-sessions__controls button:hover,
 .game-session-card__main:hover,
 .game-session-card__actions button:hover,
@@ -2728,6 +2732,28 @@ a:hover {
   min-height: 44px;
   padding: 0 16px;
   text-decoration: none;
+}
+
+.game-chat__back {
+  text-decoration: none;
+}
+
+.game-library__create-link {
+  min-height: 44px;
+  padding: 0 16px;
+  text-decoration: none;
+}
+
+.game-library__inline-link {
+  min-height: 38px;
+  padding: 0 12px;
+  text-decoration: none;
+}
+
+.game-chat__back::after,
+.game-library__create-link::after,
+.game-library__inline-link::after {
+  display: none;
 }
 
 .game-sessions {
@@ -3097,11 +3123,18 @@ a:hover {
   gap: 12px;
 }
 
+.game-library__header--with-action {
+  align-items: center;
+}
+
+.game-library__header h1,
 .game-library__header h2 {
   margin: 0;
 }
 
 .game-library__header span {
+  display: block;
+  margin-top: 6px;
   color: var(--accent);
   font-size: 0.9rem;
 }
@@ -3109,6 +3142,7 @@ a:hover {
 .game-library__empty {
   min-height: 140px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: 10px;

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { getFunctionName } from "convex/server";
 import { TextDecoder as NodeTextDecoder, TextEncoder as NodeTextEncoder } from "util";
-import { AiGameCreator } from "@/components/game/AiGameCreator";
+import { AiGameCreator, PublishedGameGallery } from "@/components/game/AiGameCreator";
 import { ToastProvider } from "@/components/ToastProvider";
 
 const mockUseConvexAuth = jest.fn();
@@ -86,6 +87,14 @@ function renderGameCreator() {
   );
 }
 
+function renderPublishedGameGallery() {
+  return render(
+    <ToastProvider>
+      <PublishedGameGallery />
+    </ToastProvider>,
+  );
+}
+
 function makeDraft(overrides: Record<string, unknown> = {}) {
   return {
     gameName: "Test Runner",
@@ -130,27 +139,31 @@ describe("AiGameCreator", () => {
       activeSessions: [],
       archivedSessions: [],
     };
-    let queryCallIndex = 0;
-    mockUseQuery.mockImplementation(() => {
-      const position = queryCallIndex % 4;
-      queryCallIndex += 1;
-      if (position === 0) return queryState.games;
-      if (position === 1) return queryState.viewer;
-      if (position === 2) return queryState.activeSessions;
-      return queryState.archivedSessions;
+    mockUseQuery.mockImplementation((query) => {
+      const functionName = getFunctionName(query);
+      if (functionName === "games:listPublished") return queryState.games;
+      if (functionName === "account:viewer") return queryState.viewer;
+      if (functionName === "games:listChatSessions") {
+        const chatQueryCount = mockUseQuery.mock.calls.filter(
+          ([calledQuery]) => getFunctionName(calledQuery) === "games:listChatSessions",
+        ).length;
+        return chatQueryCount % 2 === 1
+          ? queryState.activeSessions
+          : queryState.archivedSessions;
+      }
+      return undefined;
     });
-    let mutationCallIndex = 0;
-    mockUseMutation.mockImplementation(() => {
-      const position = mutationCallIndex % 8;
-      mutationCallIndex += 1;
-      if (position === 0) return mockLikeGame;
-      if (position === 1) return mockGenerateUploadUrl;
-      if (position === 2) return mockCreateGame;
-      if (position === 3) return mockDeleteGame;
-      if (position === 4) return mockSaveChatSession;
-      if (position === 5) return mockArchiveChatSession;
-      if (position === 6) return mockRestoreChatSession;
-      return mockDeleteChatSession;
+    mockUseMutation.mockImplementation((mutation) => {
+      const functionName = getFunctionName(mutation);
+      if (functionName === "games:like") return mockLikeGame;
+      if (functionName === "games:generateUploadUrl") return mockGenerateUploadUrl;
+      if (functionName === "games:createGame") return mockCreateGame;
+      if (functionName === "games:deleteGame") return mockDeleteGame;
+      if (functionName === "games:saveChatSession") return mockSaveChatSession;
+      if (functionName === "games:archiveChatSession") return mockArchiveChatSession;
+      if (functionName === "games:restoreChatSession") return mockRestoreChatSession;
+      if (functionName === "games:deleteChatSession") return mockDeleteChatSession;
+      return jest.fn();
     });
   });
 
@@ -474,7 +487,7 @@ describe("AiGameCreator", () => {
     ];
     queryState.viewer = { role: "admin" };
 
-    renderGameCreator();
+    renderPublishedGameGallery();
 
     fireEvent.click(screen.getByLabelText("Delete Delete Me"));
 
@@ -482,6 +495,32 @@ describe("AiGameCreator", () => {
       expect(mockDeleteGame).toHaveBeenCalledWith({ gameId: "game-1" });
     });
     expect(window.confirm).toHaveBeenCalledWith('Delete "Delete Me"? This cannot be undone.');
+  });
+
+  it("shows only the published game library with an AI creator link on the game page", () => {
+    queryState.games = [
+      {
+        _id: "game-1",
+        name: "Published Runner",
+        prompt: "make a runner",
+        createdAt: Date.UTC(2026, 0, 1),
+        likes: 3,
+        htmlUrl: "https://example.com/game.html",
+        analysisUrl: null,
+        imageUrl: null,
+      },
+    ];
+
+    renderPublishedGameGallery();
+
+    expect(screen.getByRole("heading", { name: "Published Games" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Create with AI" })).toHaveAttribute(
+      "href",
+      "/game/create",
+    );
+    expect(screen.getByRole("heading", { name: "Published Runner" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Game prompt")).not.toBeInTheDocument();
+    expect(screen.queryByText("Chat Sessions")).not.toBeInTheDocument();
   });
 
   it("guides signed-out visitors to log in before using the game creator", () => {

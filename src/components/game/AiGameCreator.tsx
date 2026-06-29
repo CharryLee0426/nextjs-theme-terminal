@@ -17,7 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppToast } from "@/components/ToastProvider";
 import { api } from "../../../convex/_generated/api";
@@ -306,11 +306,223 @@ function ChatMessageContent({ content }: { content: string }) {
   );
 }
 
+function GamePreviewModal({
+  previewHtml,
+  previewFrameRef,
+  focusPreviewFrame,
+  onClose,
+}: {
+  previewHtml: string;
+  previewFrameRef: RefObject<HTMLIFrameElement | null>;
+  focusPreviewFrame: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="game-preview-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Game preview"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div className="game-preview-modal__window">
+        <button
+          type="button"
+          className="game-preview-modal__close"
+          onClick={onClose}
+          aria-label="Close preview"
+        >
+          <X size={22} />
+        </button>
+        <div className="game-preview-modal__stage">
+          <iframe
+            ref={previewFrameRef}
+            title="Generated game preview"
+            srcDoc={previewHtml}
+            sandbox="allow-scripts allow-pointer-lock"
+            allow="gamepad; fullscreen"
+            allowFullScreen
+            tabIndex={0}
+            onLoad={focusPreviewFrame}
+            onPointerDown={focusPreviewFrame}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function PublishedGameGallery() {
+  const toast = useAppToast();
+  const games = useQuery(api.games.listPublished) as PublishedGame[] | undefined;
+  const viewer = useQuery(api.account.viewer);
+  const likeGame = useMutation(api.games.like);
+  const deleteGame = useMutation(api.games.deleteGame);
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
+  const [deletingGameId, setDeletingGameId] = useState<Id<"games"> | null>(null);
+  const previewFrameRef = useRef<HTMLIFrameElement | null>(null);
+
+  const sortedGames = useMemo(() => games ?? [], [games]);
+  const canDeleteGames = viewer != null && viewer.role === "admin";
+
+  const focusPreviewFrame = useCallback(() => {
+    const frame = previewFrameRef.current;
+    if (!frame) return;
+
+    frame.focus();
+    if (process.env.NODE_ENV !== "test") {
+      try {
+        frame.contentWindow?.focus();
+      } catch {
+        // Cross-document focus can fail in some browser/sandbox combinations.
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!previewHtml) return;
+
+    const frameId = window.requestAnimationFrame(focusPreviewFrame);
+    return () => window.cancelAnimationFrame(frameId);
+  }, [focusPreviewFrame, previewHtml]);
+
+  const previewPublishedGame = async (game: PublishedGame) => {
+    if (!game.htmlUrl) {
+      toast.show("Published game HTML is unavailable.", "error");
+      return;
+    }
+
+    try {
+      const response = await fetch(game.htmlUrl);
+      if (!response.ok) {
+        throw new Error("Could not load published game.");
+      }
+      setPreviewHtml(await response.text());
+    } catch (error) {
+      toast.show(error instanceof Error ? error.message : "Could not load published game.", "error");
+    }
+  };
+
+  const deletePublishedGame = async (game: PublishedGame) => {
+    if (deletingGameId) return;
+    const confirmed = window.confirm(`Delete "${game.name}"? This cannot be undone.`);
+    if (!confirmed) return;
+
+    setDeletingGameId(game._id);
+    try {
+      await deleteGame({ gameId: game._id });
+      toast.show("Game deleted.", "info");
+    } catch (error) {
+      toast.show(error instanceof Error ? error.message : "Game deletion failed.", "error");
+    } finally {
+      setDeletingGameId(null);
+    }
+  };
+
+  return (
+    <section className="game-page" aria-label="Published games">
+      <section className="game-library" aria-label="Published games">
+        <div className="game-library__header game-library__header--with-action">
+          <div>
+            <h1>Published Games</h1>
+            <span>{sortedGames.length} total</span>
+          </div>
+          <Link href="/game/create" className="game-library__create-link">
+            <Gamepad2 size={18} />
+            <span>Create with AI</span>
+          </Link>
+        </div>
+
+        {games === undefined ? (
+          <div className="game-library__empty">
+            <LoaderCircle size={22} />
+            <span>Loading games</span>
+          </div>
+        ) : sortedGames.length === 0 ? (
+          <div className="game-library__empty">
+            <span>No published games yet.</span>
+            <Link href="/game/create" className="game-library__inline-link">
+              Create the first one with AI
+            </Link>
+          </div>
+        ) : (
+          <div className="game-grid">
+            {sortedGames.map((game) => (
+              <article key={game._id} className="published-game-card">
+                <button
+                  type="button"
+                  className="published-game-card__image"
+                  onClick={() => void previewPublishedGame(game)}
+                  aria-label={`Preview ${game.name}`}
+                >
+                  {game.imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={game.imageUrl} alt={`${game.name} intro`} />
+                  ) : (
+                    <Gamepad2 size={36} />
+                  )}
+                </button>
+                <div className="published-game-card__body">
+                  <h3>{game.name}</h3>
+                  <time dateTime={new Date(game.createdAt).toISOString()}>
+                    {format(new Date(game.createdAt), "MMM d, yyyy HH:mm")}
+                  </time>
+                  <div className="published-game-card__actions">
+                    <button type="button" onClick={() => void likeGame({ gameId: game._id })}>
+                      <Heart size={16} />
+                      <span>{game.likes}</span>
+                    </button>
+                    {game.htmlUrl && (
+                      <Link href={game.htmlUrl} target="_blank" rel="noopener">
+                        <ExternalLink size={16} />
+                      </Link>
+                    )}
+                    {game.analysisUrl && (
+                      <Link href={game.analysisUrl} target="_blank" rel="noopener" title={game.analysisFileName || "Analysis"}>
+                        MD
+                      </Link>
+                    )}
+                    {canDeleteGames && (
+                      <button
+                        type="button"
+                        className="published-game-card__delete"
+                        onClick={() => void deletePublishedGame(game)}
+                        disabled={deletingGameId === game._id}
+                        aria-label={`Delete ${game.name}`}
+                        title="Delete game"
+                      >
+                        {deletingGameId === game._id ? (
+                          <LoaderCircle size={16} />
+                        ) : (
+                          <Trash2 size={16} />
+                        )}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {previewHtml && (
+        <GamePreviewModal
+          previewHtml={previewHtml}
+          previewFrameRef={previewFrameRef}
+          focusPreviewFrame={focusPreviewFrame}
+          onClose={() => setPreviewHtml(null)}
+        />
+      )}
+    </section>
+  );
+}
+
 export function AiGameCreator() {
   const toast = useAppToast();
   const { isLoading: authLoading, isAuthenticated } = useConvexAuth();
-  const games = useQuery(api.games.listPublished) as PublishedGame[] | undefined;
-  const viewer = useQuery(api.account.viewer);
   const activeSessions = useQuery(
     api.games.listChatSessions,
     isAuthenticated ? { archived: false } : "skip",
@@ -319,10 +531,8 @@ export function AiGameCreator() {
     api.games.listChatSessions,
     isAuthenticated ? { archived: true } : "skip",
   ) as GameChatSession[] | undefined;
-  const likeGame = useMutation(api.games.like);
   const generateUploadUrl = useMutation(api.games.generateUploadUrl);
   const createGame = useMutation(api.games.createGame);
-  const deleteGame = useMutation(api.games.deleteGame);
   const saveChatSession = useMutation(api.games.saveChatSession);
   const archiveChatSession = useMutation(api.games.archiveChatSession);
   const restoreChatSession = useMutation(api.games.restoreChatSession);
@@ -343,13 +553,10 @@ export function AiGameCreator() {
   const [submitImageFile, setSubmitImageFile] = useState<File | null>(null);
   const [submitImagePreviewUrl, setSubmitImagePreviewUrl] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [deletingGameId, setDeletingGameId] = useState<Id<"games"> | null>(null);
   const previewFrameRef = useRef<HTMLIFrameElement | null>(null);
 
   const isConversation = messages.length > 0;
   const canSubmit = Boolean(draft) && !isSubmitting && !authLoading;
-  const canDeleteGames = viewer != null && viewer.role === "admin";
-  const sortedGames = useMemo(() => games ?? [], [games]);
   const visibleSessions = showArchivedSessions ? archivedSessions : activeSessions;
 
   const persistSession = async ({
@@ -694,39 +901,6 @@ export function AiGameCreator() {
     }
   };
 
-  const previewPublishedGame = async (game: PublishedGame) => {
-    if (!game.htmlUrl) {
-      toast.show("Published game HTML is unavailable.", "error");
-      return;
-    }
-
-    try {
-      const response = await fetch(game.htmlUrl);
-      if (!response.ok) {
-        throw new Error("Could not load published game.");
-      }
-      setPreviewHtml(await response.text());
-    } catch (error) {
-      toast.show(error instanceof Error ? error.message : "Could not load published game.", "error");
-    }
-  };
-
-  const deletePublishedGame = async (game: PublishedGame) => {
-    if (deletingGameId) return;
-    const confirmed = window.confirm(`Delete "${game.name}"? This cannot be undone.`);
-    if (!confirmed) return;
-
-    setDeletingGameId(game._id);
-    try {
-      await deleteGame({ gameId: game._id });
-      toast.show("Game deleted.", "info");
-    } catch (error) {
-      toast.show(error instanceof Error ? error.message : "Game deletion failed.", "error");
-    } finally {
-      setDeletingGameId(null);
-    }
-  };
-
   const downloadBlob = (content: string, fileName: string, contentType: string) => {
     const objectUrl = URL.createObjectURL(new Blob([content], { type: contentType }));
     const link = document.createElement("a");
@@ -969,10 +1143,10 @@ export function AiGameCreator() {
         {isConversation && (
           <div className="game-chat__conversation">
             <div className="game-chat__bar">
-              <button type="button" onClick={returnToGameHome} className="game-chat__back">
+              <Link href="/game" className="game-chat__back">
                 <ArrowLeft size={18} />
                 <span>Back to games</span>
-              </button>
+              </Link>
             </div>
 
             <div className="game-chat__messages" aria-live="polite">
@@ -1066,116 +1240,13 @@ export function AiGameCreator() {
         </form>
       </div>
 
-      {!isConversation && (
-        <section className="game-library" aria-label="Published games">
-          <div className="game-library__header">
-            <h2>Published Games</h2>
-            <span>{sortedGames.length} total</span>
-          </div>
-
-          {games === undefined ? (
-            <div className="game-library__empty">
-              <LoaderCircle size={22} />
-              <span>Loading games</span>
-            </div>
-          ) : sortedGames.length === 0 ? (
-            <div className="game-library__empty">No published games yet.</div>
-          ) : (
-            <div className="game-grid">
-              {sortedGames.map((game) => (
-                <article key={game._id} className="published-game-card">
-                  <button
-                    type="button"
-                    className="published-game-card__image"
-                    onClick={() => void previewPublishedGame(game)}
-                    aria-label={`Preview ${game.name}`}
-                  >
-                    {game.imageUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={game.imageUrl} alt={`${game.name} intro`} />
-                    ) : (
-                      <Gamepad2 size={36} />
-                    )}
-                  </button>
-                  <div className="published-game-card__body">
-                    <h3>{game.name}</h3>
-                    <time dateTime={new Date(game.createdAt).toISOString()}>
-                      {format(new Date(game.createdAt), "MMM d, yyyy HH:mm")}
-                    </time>
-                    <div className="published-game-card__actions">
-                      <button type="button" onClick={() => void likeGame({ gameId: game._id })}>
-                        <Heart size={16} />
-                        <span>{game.likes}</span>
-                      </button>
-                      {game.htmlUrl && (
-                        <Link href={game.htmlUrl} target="_blank" rel="noopener">
-                          <ExternalLink size={16} />
-                        </Link>
-                      )}
-                      {game.analysisUrl && (
-                        <Link href={game.analysisUrl} target="_blank" rel="noopener" title={game.analysisFileName || "Analysis"}>
-                          MD
-                        </Link>
-                      )}
-                      {canDeleteGames && (
-                        <button
-                          type="button"
-                          className="published-game-card__delete"
-                          onClick={() => void deletePublishedGame(game)}
-                          disabled={deletingGameId === game._id}
-                          aria-label={`Delete ${game.name}`}
-                          title="Delete game"
-                        >
-                          {deletingGameId === game._id ? (
-                            <LoaderCircle size={16} />
-                          ) : (
-                            <Trash2 size={16} />
-                          )}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-      )}
-
       {previewHtml && (
-        <div
-          className="game-preview-modal"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Game preview"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setPreviewHtml(null);
-          }}
-        >
-          <div className="game-preview-modal__window">
-            <button
-              type="button"
-              className="game-preview-modal__close"
-              onClick={() => setPreviewHtml(null)}
-              aria-label="Close preview"
-            >
-              <X size={22} />
-            </button>
-            <div className="game-preview-modal__stage">
-              <iframe
-                ref={previewFrameRef}
-                title="Generated game preview"
-                srcDoc={previewHtml}
-                sandbox="allow-scripts allow-pointer-lock"
-                allow="gamepad; fullscreen"
-                allowFullScreen
-                tabIndex={0}
-                onLoad={focusPreviewFrame}
-                onPointerDown={focusPreviewFrame}
-              />
-            </div>
-          </div>
-        </div>
+        <GamePreviewModal
+          previewHtml={previewHtml}
+          previewFrameRef={previewFrameRef}
+          focusPreviewFrame={focusPreviewFrame}
+          onClose={() => setPreviewHtml(null)}
+        />
       )}
 
       {submitOpen && draft && (
