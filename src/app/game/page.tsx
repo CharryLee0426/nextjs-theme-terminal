@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import { AiGameCreator } from "@/components/game/AiGameCreator";
+import { PublishedGameGallery } from "@/components/game/AiGameCreator";
 
 export const metadata: Metadata = {
-  title: "Game",
-  description: "Create, preview, edit, and publish AI-generated browser mini games.",
+  title: "Games",
+  description: "Play published browser mini games and start creating one with AI.",
 };
 
 export default function GamePage() {
-  return <AiGameCreator />;
+  return <PublishedGameGallery />;
 }

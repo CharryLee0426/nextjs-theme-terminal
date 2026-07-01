@@ -15,6 +15,149 @@ import {
 import { GalleryDetailOverlay } from "./GalleryDetailOverlay";
 import { GalleryHeicImage } from "./GalleryHeicImage";
 import { GalleryUploadModal } from "./GalleryUploadModal";
+import { usePhysicalBadgeDrag } from "./usePhysicalBadgeDrag";
+
+type GalleryPost = {
+  _id: Id<"galleryPosts">;
+  title: string;
+  text: string;
+  displayAt: number;
+  likes: number;
+  dislikes: number;
+  imageUrls: string[];
+};
+
+type GalleryBadgeItemProps = {
+  post: GalleryPost;
+  likeBusy: Id<"galleryPosts"> | null;
+  dislikeBusy: Id<"galleryPosts"> | null;
+  likeMut: (args: { postId: Id<"galleryPosts"> }) => Promise<unknown>;
+  dislikeMut: (args: { postId: Id<"galleryPosts"> }) => Promise<unknown>;
+  onOpen: (id: Id<"galleryPosts">) => void;
+  setLikeBusy: (id: Id<"galleryPosts"> | null) => void;
+  setDislikeBusy: (id: Id<"galleryPosts"> | null) => void;
+};
+
+function GalleryBadgeItem({
+  post,
+  likeBusy,
+  dislikeBusy,
+  likeMut,
+  dislikeMut,
+  onOpen,
+  setLikeBusy,
+  setDislikeBusy,
+}: GalleryBadgeItemProps) {
+  const drag = usePhysicalBadgeDrag<HTMLDivElement>({
+    ignoreSelector: ".gallery-vote-btn",
+    onTap: () => onOpen(post._id),
+  });
+
+  const cover = post.imageUrls[0];
+  const titlePrev = truncateText(post.title, GALLERY_TITLE_PREVIEW_MAX);
+  const textPrev = truncateText(post.text, GALLERY_BODY_PREVIEW_MAX);
+  const displayDate = format(post.displayAt, "PP", {
+    locale: enUS,
+  });
+
+  return (
+    <div className="gallery-node">
+      <div
+        ref={drag.ref}
+        role="button"
+        tabIndex={0}
+        className="gallery-badge-card"
+        aria-label={`Open post: ${post.title}`}
+        onClickCapture={drag.onClickCapture}
+        onPointerCancel={drag.onPointerCancel}
+        onPointerDown={drag.onPointerDown}
+        onPointerMove={drag.onPointerMove}
+        onPointerUp={drag.onPointerUp}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onOpen(post._id);
+          }
+        }}
+      >
+        <div className="gallery-badge-lanyard" aria-hidden>
+          <span>terminal</span>
+          <b>24</b>
+        </div>
+        <span className="gallery-badge-ring" aria-hidden />
+        <span className="gallery-badge-hole" aria-hidden />
+        <div
+          className={
+            cover
+              ? "gallery-badge-card__media"
+              : "gallery-badge-card__media gallery-badge-card__media--empty"
+          }
+        >
+          {cover ? (
+            <GalleryHeicImage
+              src={cover}
+              alt=""
+              className="gallery-badge-card__cover"
+            />
+          ) : (
+            <span className="gallery-img-fallback">No image</span>
+          )}
+        </div>
+        <div className="gallery-badge-card__body">
+          <h2 className="gallery-badge-card__title">{titlePrev}</h2>
+          <p className="gallery-badge-card__excerpt">{textPrev}</p>
+          <time
+            className="gallery-badge-card__time"
+            dateTime={new Date(post.displayAt).toISOString()}
+          >
+            {displayDate}
+          </time>
+          <div
+            className="gallery-badge-card__votes"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="gallery-vote-btn"
+              aria-label="Like"
+              disabled={likeBusy === post._id}
+              onClick={async (e) => {
+                e.stopPropagation();
+                setLikeBusy(post._id);
+                try {
+                  await likeMut({ postId: post._id });
+                } finally {
+                  setLikeBusy(null);
+                }
+              }}
+            >
+              <ThumbsUp size={16} />
+              <span>{post.likes}</span>
+            </button>
+            <button
+              type="button"
+              className="gallery-vote-btn"
+              aria-label="Dislike"
+              disabled={dislikeBusy === post._id}
+              onClick={async (e) => {
+                e.stopPropagation();
+                setDislikeBusy(post._id);
+                try {
+                  await dislikeMut({ postId: post._id });
+                } finally {
+                  setDislikeBusy(null);
+                }
+              }}
+            >
+              <ThumbsDown size={16} />
+              <span>{post.dislikes}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function GalleryView() {
   const posts = useQuery(api.gallery.listPosts);
@@ -45,15 +188,6 @@ export function GalleryView() {
 
   return (
     <div className="gallery-page">
-      <div className="page framed gallery-intro">
-        <h1>Gallery</h1>
-        <p>
-          Scroll horizontally: newest posts are on the left. Tap a card to open
-          a larger detail view. Anyone can like or dislike a post. Only
-          administrators can add new posts.
-        </p>
-      </div>
-
       {posts.length === 0 ? (
         <p className="gallery-empty">
           {canPost
@@ -64,111 +198,19 @@ export function GalleryView() {
         <div className="gallery-scroll-wrap">
           <div className="gallery-scroll" aria-label="画廊时间轴">
             <div className="gallery-track">
-              {posts.map((post, index) => {
-                const cover = post.imageUrls[0];
-                const titlePrev = truncateText(
-                  post.title,
-                  GALLERY_TITLE_PREVIEW_MAX,
-                );
-                const textPrev = truncateText(
-                  post.text,
-                  GALLERY_BODY_PREVIEW_MAX,
-                );
-                return (
-                  <div key={post._id} className="gallery-node">
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      className="gallery-card"
-                      aria-label={`Open post: ${post.title}`}
-                      onClick={() => setDetailId(post._id)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          setDetailId(post._id);
-                        }
-                      }}
-                    >
-                      <div
-                        className={
-                          cover
-                            ? "gallery-card__media"
-                            : "gallery-card__media gallery-card__media--empty"
-                        }
-                      >
-                        {cover ? (
-                          <GalleryHeicImage
-                            src={cover}
-                            alt=""
-                            className="gallery-card__cover"
-                          />
-                        ) : null}
-                      </div>
-                      <div className="gallery-card__body">
-                        <h2 className="gallery-card__title">{titlePrev}</h2>
-                        <p className="gallery-card__excerpt">{textPrev}</p>
-                        <time
-                          className="gallery-card__time"
-                          dateTime={new Date(post.displayAt).toISOString()}
-                        >
-                          {format(post.displayAt, "PP", { locale: enUS })}
-                        </time>
-                        <div
-                          className="gallery-card__votes"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <button
-                            type="button"
-                            className="gallery-vote-btn"
-                            aria-label="Like"
-                            disabled={likeBusy === post._id}
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              setLikeBusy(post._id);
-                              try {
-                                await likeMut({ postId: post._id });
-                              } finally {
-                                setLikeBusy(null);
-                              }
-                            }}
-                          >
-                            <ThumbsUp size={16} />
-                            <span>{post.likes}</span>
-                          </button>
-                          <button
-                            type="button"
-                            className="gallery-vote-btn"
-                            aria-label="Dislike"
-                            disabled={dislikeBusy === post._id}
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              setDislikeBusy(post._id);
-                              try {
-                                await dislikeMut({ postId: post._id });
-                              } finally {
-                                setDislikeBusy(null);
-                              }
-                            }}
-                          >
-                            <ThumbsDown size={16} />
-                            <span>{post.dislikes}</span>
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                    <div
-                      className={`gallery-foot${
-                        index === 0 ? " gallery-foot--first" : ""
-                      }${index === posts.length - 1 ? " gallery-foot--last" : ""}`}
-                      aria-hidden
-                    >
-                      <span className="gallery-foot__line" />
-                      <span className="gallery-foot__dot" />
-                      <span className="gallery-foot__line" />
-                    </div>
-                  </div>
-                );
-              })}
+              {posts.map((post) => (
+                <GalleryBadgeItem
+                  key={post._id}
+                  post={post}
+                  likeBusy={likeBusy}
+                  dislikeBusy={dislikeBusy}
+                  likeMut={likeMut}
+                  dislikeMut={dislikeMut}
+                  onOpen={setDetailId}
+                  setLikeBusy={setLikeBusy}
+                  setDislikeBusy={setDislikeBusy}
+                />
+              ))}
             </div>
           </div>
         </div>

@@ -51,4 +51,41 @@ export default defineSchema({
     createdAt: v.number(),
     likes: v.number(),
   }).index("by_createdAt", ["createdAt"]),
+  gameChatSessions: defineTable({
+    userId: v.id("users"),
+    title: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    archivedAt: v.optional(v.number()),
+    messages: v.array(
+      v.object({
+        id: v.string(),
+        role: v.union(v.literal("user"), v.literal("assistant")),
+        content: v.string(),
+        details: v.optional(v.array(v.string())),
+      }),
+    ),
+    draft: v.optional(
+      v.object({
+        generated: v.optional(v.literal(true)),
+        gameName: v.string(),
+        slug: v.string(),
+        fileName: v.string(),
+        analysisFileName: v.string(),
+        analysisMarkdown: v.string(),
+        html: v.string(),
+        imageUrl: v.string(),
+        imageSource: v.string(),
+        imageNote: v.optional(v.union(v.string(), v.null())),
+        prompt: v.string(),
+        visibleProcess: v.array(v.string()),
+        verificationConclusion: v.union(v.literal("PASS"), v.literal("FAIL")),
+        verificationReasons: v.array(v.string()),
+        skillPath: v.string(),
+        openAiModel: v.string(),
+      }),
+    ),
+  })
+    .index("by_user_updatedAt", ["userId", "updatedAt"])
+    .index("by_user_archivedAt", ["userId", "archivedAt"]),
 });
