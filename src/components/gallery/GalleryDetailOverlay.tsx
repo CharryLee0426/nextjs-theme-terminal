@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { GalleryDetailImageCarousel } from "./GalleryDetailImageCarousel";
+import { usePhysicalBadgeDrag } from "./usePhysicalBadgeDrag";
 
 export type GalleryPostClient = {
   _id: Id<"galleryPosts">;
@@ -32,6 +33,10 @@ export function GalleryDetailOverlay({ post, onClose }: Props) {
 
   const [slideIndex, setSlideIndex] = useState(0);
   const [imagePreviewOpen, setImagePreviewOpen] = useState(false);
+  const drag = usePhysicalBadgeDrag<HTMLDivElement>({
+    ignoreSelector:
+      ".gallery-detail-carousel__nav, .gallery-detail-carousel__dot, .gallery-detail-vote-btn",
+  });
 
   useEffect(() => {
     setSlideIndex(0);
@@ -87,6 +92,12 @@ export function GalleryDetailOverlay({ post, onClose }: Props) {
   };
 
   const hasImages = post.imageUrls.length > 0;
+  const detailDate = format(post.displayAt, "MMM d, yyyy", {
+    locale: enUS,
+  }).toUpperCase();
+  const detailTime = format(post.displayAt, "h:mm:ss a", {
+    locale: enUS,
+  }).toUpperCase();
 
   return (
     <>
@@ -111,45 +122,77 @@ export function GalleryDetailOverlay({ post, onClose }: Props) {
           >
             <X size={22} />
           </button>
-          <div className="gallery-detail-inner">
-            {hasImages ? (
-              <GalleryDetailImageCarousel
-                imageUrls={post.imageUrls}
-                index={slideIndex}
-                onIndexChange={setSlideIndex}
-                variant="embedded"
-                onImageClick={() => setImagePreviewOpen(true)}
-              />
-            ) : null}
-            <div className="gallery-detail-body">
-              <p className="gallery-detail-time">
-                {format(post.displayAt, "PPpp", { locale: enUS })}
-              </p>
-              <h2 id="gallery-detail-title">{post.title}</h2>
-              <p className="gallery-detail-text">{post.text}</p>
-              <div className="gallery-card__votes gallery-detail-votes">
+          <div
+            ref={drag.ref}
+            className="gallery-detail-object"
+            onClickCapture={drag.onClickCapture}
+            onPointerCancel={drag.onPointerCancel}
+            onPointerDown={drag.onPointerDown}
+            onPointerMove={drag.onPointerMove}
+            onPointerUp={drag.onPointerUp}
+          >
+            <div className="gallery-detail-lanyard" aria-hidden>
+              <span>terminal</span>
+              <b>24</b>
+            </div>
+            <span className="gallery-detail-ring" aria-hidden />
+            <article className="gallery-detail-badge">
+              <span className="gallery-detail-hole" aria-hidden />
+              <div className="gallery-detail-meta">
+                <time dateTime={new Date(post.displayAt).toISOString()}>
+                  {detailDate}
+                  <br />
+                  {detailTime}
+                </time>
+                <span>TERMINAL GALLERY</span>
+              </div>
+              <div
+                className={
+                  hasImages
+                    ? "gallery-detail-badge__media"
+                    : "gallery-detail-badge__media gallery-detail-badge__media--empty"
+                }
+              >
+                {hasImages ? (
+                  <GalleryDetailImageCarousel
+                    imageUrls={post.imageUrls}
+                    index={slideIndex}
+                    onIndexChange={setSlideIndex}
+                    variant="embedded"
+                    onImageClick={() => setImagePreviewOpen(true)}
+                  />
+                ) : (
+                  <span className="gallery-img-fallback">No image</span>
+                )}
+              </div>
+              <div className="gallery-detail-body">
+                <h2 id="gallery-detail-title">{post.title}</h2>
+                <p className="gallery-detail-text">{post.text}</p>
+              </div>
+              <div className="gallery-detail-votes">
                 <button
                   type="button"
-                  className="gallery-vote-btn"
+                  className="gallery-vote-btn gallery-detail-vote-btn"
                   onClick={onLike}
                   disabled={likeBusy}
                   aria-label="Like"
                 >
-                  <ThumbsUp size={18} />
+                  <ThumbsUp size={22} />
                   <span>{post.likes}</span>
                 </button>
+                <span className="gallery-detail-vote-divider" aria-hidden />
                 <button
                   type="button"
-                  className="gallery-vote-btn"
+                  className="gallery-vote-btn gallery-detail-vote-btn"
                   onClick={onDislike}
                   disabled={dislikeBusy}
                   aria-label="Dislike"
                 >
-                  <ThumbsDown size={18} />
+                  <ThumbsDown size={22} />
                   <span>{post.dislikes}</span>
                 </button>
               </div>
-            </div>
+            </article>
           </div>
         </div>
       </div>

@@ -129,7 +129,25 @@ export function GalleryDetailImageCarousel({
           </div>
         )}
       </div>
-      {n > 1 ? (
+      {n > 1 && variant === "embedded" ? (
+        <div className="gallery-detail-carousel__dots" aria-label="Choose image">
+          {imageUrls.map((url, i) => (
+            <button
+              key={`${url}-${i}`}
+              type="button"
+              className={
+                i === safeIndex
+                  ? "gallery-detail-carousel__dot gallery-detail-carousel__dot--active"
+                  : "gallery-detail-carousel__dot"
+              }
+              onClick={() => onIndexChange(i)}
+              aria-label={`Show image ${i + 1} of ${n}`}
+              aria-current={i === safeIndex ? "true" : undefined}
+            />
+          ))}
+        </div>
+      ) : null}
+      {n > 1 && variant === "fullscreen" ? (
         <p className="gallery-detail-carousel__counter" aria-live="polite">
           {safeIndex + 1} / {n}
         </p>
